@@ -1,0 +1,709 @@
+<aside class="sidebar-toolbox">
+    <!-- Header with Dynamic Title -->
+    <div class="sidebar-header">
+        <div class="header-top">
+            <h2>{{ bannerService.activeTab() | titlecase }}</h2>
+            <span class="active-badge" *ngIf="currentObject">
+                SELECTED: {{ getObjectTypeName(currentObject.type!) }}
+            </span>
+        </div>
+    </div>
+
+    <div class="panel-container">
+        <!-- 1. Templates Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'templates'">
+            <app-templates-panel></app-templates-panel>
+        </div>
+
+        <!-- 2. Text Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'text'">
+            <!-- Text Actions if NO text selected -->
+            <div class="action-grid"
+                *ngIf="!currentObject || (currentObject.type !== 'textbox' && currentObject.type !== 'i-text')">
+                <div class="section-title">Add Text</div>
+                <div class="quick-text-styles">
+                    <button class="style-card heading" (click)="addText('heading')">
+                        <h1>Add a heading</h1>
+                    </button>
+                    <button class="style-card subheading" (click)="addText('subheading')">
+                        <h3>Add a sub-heading</h3>
+                    </button>
+                    <button class="style-card body" (click)="addText('body')">
+                        <p>Add body text</p>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Text Properties if text IS selected -->
+            <div class="property-card" *ngIf="currentObject?.type === 'textbox' || currentObject?.type === 'i-text'">
+                <div class="section-title">Language & Input</div>
+                <div class="language-toggle">
+                    <button class="lang-btn" [class.active]="bannerService.typingLanguage() === 'en'"
+                        (click)="bannerService.typingLanguage.set('en')">
+                        English
+                    </button>
+                    <button class="lang-btn" [class.active]="bannerService.typingLanguage() === 'mr'"
+                        (click)="bannerService.typingLanguage.set('mr')">
+                        Marathi
+                    </button>
+                    <div class="hint" *ngIf="bannerService.typingLanguage() === 'mr'">
+                        Phonetic: type "namaskar" for "नमस्कार"
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Typography</div>
+
+                <div class="control-group">
+                    <label>Font Family</label>
+                    <div class="custom-select">
+                        <select [(ngModel)]="selectedFont" (change)="onPropertyChange('fontFamily', selectedFont)">
+                            @for (font of fontFamilies; track font.value) {
+                            <option [value]="font.value" [style.font-family]="font.value">{{ font.name }}</option>
+                            }
+                        </select>
+                        <span class="material-symbols-outlined">expand_more</span>
+                    </div>
+                </div>
+
+                <div class="control-row-grid">
+                    <div class="control-col">
+                        <label>Size</label>
+                        <div class="input-container">
+                            <input type="number" [(ngModel)]="fontSize"
+                                (input)="onPropertyChange('fontSize', fontSize)">
+                            <span class="unit">px</span>
+                        </div>
+                    </div>
+                    <div class="control-col">
+                        <label>Color</label>
+                        <div class="color-picker-wrapper">
+                            <div class="color-swatch-btn" [style.background-color]="textColor">
+                                <input type="color" [(ngModel)]="textColor"
+                                    (input)="onPropertyChange('fill', textColor)">
+                            </div>
+                            <span class="hex-text">{{ textColor }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Style & Alignment</div>
+                <div class="tool-row">
+                    <div class="button-group">
+                        <button class="icon-btn" (click)="toggleStyle('bold')"
+                            [class.active]="currentObject.fontWeight === 'bold'">
+                            <span class="material-symbols-outlined">format_bold</span>
+                        </button>
+                        <button class="icon-btn" (click)="toggleStyle('italic')"
+                            [class.active]="currentObject.fontStyle === 'italic'">
+                            <span class="material-symbols-outlined">format_italic</span>
+                        </button>
+                        <button class="icon-btn" (click)="toggleStyle('underline')"
+                            [class.active]="currentObject.underline">
+                            <span class="material-symbols-outlined">format_underlined</span>
+                        </button>
+                        <button class="icon-btn" (click)="applyEffect('shadow')" [class.active]="currentObject.shadow"
+                            title="Text Shadow">
+                            <span class="material-symbols-outlined">layers</span>
+                        </button>
+                    </div>
+                    <div class="button-group">
+                        <button class="icon-btn" (click)="alignText('left')"
+                            [class.active]="currentObject.textAlign === 'left'">
+                            <span class="material-symbols-outlined">format_align_left</span>
+                        </button>
+                        <button class="icon-btn" (click)="alignText('center')"
+                            [class.active]="currentObject.textAlign === 'center'">
+                            <span class="material-symbols-outlined">format_align_center</span>
+                        </button>
+                        <button class="icon-btn" (click)="alignText('right')"
+                            [class.active]="currentObject.textAlign === 'right'">
+                            <span class="material-symbols-outlined">format_align_right</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Transform</div>
+                <div class="tool-row">
+                    <div class="button-group">
+                        <button class="icon-btn" (click)="flip('h')" title="Flip Horizontal">
+                            <span class="material-symbols-outlined">flip</span>
+                        </button>
+                        <button class="icon-btn" (click)="flip('v')" title="Flip Vertical">
+                            <span class="material-symbols-outlined" style="transform: rotate(90deg);">flip</span>
+                        </button>
+                    </div>
+                    <div class="slider-group">
+                        <div class="label-row"><label>Rotation</label><span>{{ angle }}&deg;</span></div>
+                        <input type="range" min="0" max="360" [(ngModel)]="angle"
+                            (input)="onPropertyChange('angle', angle)">
+                    </div>
+                    <div class="slider-group">
+                        <div class="label-row"><label>Blur</label><span>{{ blurAmount }}px</span></div>
+                        <input type="range" min="0" max="20" [(ngModel)]="blurAmount" (input)="applyBlur(blurAmount)">
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Curve & Distortion</div>
+                <div class="slider-group">
+                    <div class="label-row">
+                        <label>Text Curve</label>
+                        <div class="label-badges">
+                            <span>{{ textCurve }}</span>
+                            <button class="mini-reset" (click)="onTextCurveChange(0)"
+                                *ngIf="textCurve !== 0">Reset</button>
+                        </div>
+                    </div>
+                    <input type="range" min="-100" max="100" [(ngModel)]="textCurve"
+                        (input)="onTextCurveChange($any($event.target).value)">
+                    <div class="slider-hints">
+                        <span>Down</span>
+                        <span>Straight</span>
+                        <span>Up</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Emojis (Always Visible) -->
+            <div class="divider"></div>
+            <div class="emoji-section">
+                <div class="section-title">Emojis</div>
+                <div class="emoji-container">
+                    @for (cat of emojiCategories; track cat.name) {
+                    <div class="emoji-category">
+                        <div class="cat-name">{{cat.name}}</div>
+                        <div class="emoji-grid">
+                            @for (emoji of cat.emojis; track emoji) {
+                            <button class="emoji-btn" (click)="addSticker(emoji)">{{emoji}}</button>
+                            }
+                        </div>
+                    </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Elements Panel (Shapes & Stickers) -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'elements'">
+            <div class="section-title">SHAPE LIBRARY</div>
+            <div class="shapes-grid">
+                <button (click)="addShape('square')" title="Square"><span
+                        class="material-symbols-outlined">rectangle</span></button>
+                <button (click)="addShape('circle')" title="Circle"><span
+                        class="material-symbols-outlined">circle</span></button>
+                <button (click)="addShape('triangle')" title="Triangle"><span
+                        class="material-symbols-outlined">change_history</span></button>
+                <button (click)="addShape('star')" title="Star"><span
+                        class="material-symbols-outlined">grade</span></button>
+                <button (click)="addShape('heart')" title="Heart"><span
+                        class="material-symbols-outlined">favorite</span></button>
+                <button (click)="addShape('arrow')" title="Arrow"><span
+                        class="material-symbols-outlined">arrow_forward</span></button>
+                <button (click)="addShape('pentagon')" title="Pentagon"><span
+                        class="material-symbols-outlined">pentagon</span></button>
+                <button (click)="addShape('hexagon')" title="Hexagon"><span
+                        class="material-symbols-outlined">hexagon</span></button>
+                <button (click)="addShape('octagon')" title="Octagon"><span
+                        class="material-symbols-outlined">octagon</span></button>
+                <button (click)="addShape('cloud')" title="Cloud"><span
+                        class="material-symbols-outlined">cloud</span></button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="section-title">PREMIUM STICKERS</div>
+            <div class="stickers-grid">
+                <button class="sticker-btn" (click)="addSticker('🎉')" title="Party">🎉</button>
+                <button class="sticker-btn" (click)="addSticker('🎂')" title="Cake">🎂</button>
+                <button class="sticker-btn" (click)="addSticker('🎁')" title="Gift">🎁</button>
+                <button class="sticker-btn" (click)="addSticker('🚀')" title="Rocket">🚀</button>
+                <button class="sticker-btn" (click)="addSticker('💡')" title="Idea">💡</button>
+                <button class="sticker-btn" (click)="addSticker('🛒')" title="Cart">🛒</button>
+            </div>
+
+            <!-- Appearance properties for selected shapes -->
+            <div class="property-card"
+                *ngIf="currentObject && ['rect', 'circle', 'triangle', 'polygon', 'path'].includes(currentObject.type!)">
+                <div class="divider"></div>
+                <div class="section-title">Appearance</div>
+                <div class="control-group">
+                    <label>Fill Color</label>
+                    <div class="color-picker-wrapper">
+                        <div class="color-swatch-btn" [style.background-color]="fillColor">
+                            <input type="color" [(ngModel)]="fillColor" (input)="onPropertyChange('fill', fillColor)">
+                        </div>
+                        <span class="hex-text">{{ fillColor }}</span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="label-row"><label>Opacity</label><span>{{ opacity }}%</span></div>
+                    <input type="range" min="0" max="100" [(ngModel)]="opacity"
+                        (input)="onPropertyChange('opacity', opacity/100)">
+                </div>
+                <div class="control-group">
+                    <div class="label-row"><label>Blur</label><span>{{ blurAmount }}px</span></div>
+                    <input type="range" min="0" max="20" [(ngModel)]="blurAmount" (input)="applyBlur(blurAmount)">
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Filters & Effects Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'filters'">
+            <div class="property-card" *ngIf="currentObject?.type === 'image'">
+                <div class="section-title">AI Tools</div>
+
+                <!-- Progress Loading State -->
+                <div class="ai-progress-status" *ngIf="bannerService.isRemovingBg()">
+                    <div class="progress-info">
+                        <span>Removing Background...</span>
+                        <span>{{ bannerService.bgRemovalProgress() }}%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" [style.width.%]="bannerService.bgRemovalProgress()"></div>
+                    </div>
+                </div>
+
+                <button class="btn-ai-action" (click)="bannerService.removeBackground()"
+                    *ngIf="!bannerService.isRemovingBg() && !currentObject?.isBgRemoved">
+                    <span class="material-symbols-outlined">auto_fix_high</span>
+                    Remove Background
+                </button>
+
+                <button class="btn-ai-action restore" (click)="bannerService.restoreOriginalImage()"
+                    *ngIf="!bannerService.isRemovingBg() && currentObject?.isBgRemoved">
+                    <span class="material-symbols-outlined">history</span>
+                    Restore Original
+                </button>
+
+                <div class="divider"></div>
+
+                <div class="section-title">Transform</div>
+                <div class="tool-row">
+                    <div class="button-group">
+                        <button class="icon-btn" (click)="flip('h')" title="Flip Horizontal">
+                            <span class="material-symbols-outlined">flip</span>
+                        </button>
+                        <button class="icon-btn" (click)="flip('v')" title="Flip Vertical">
+                            <span class="material-symbols-outlined" style="transform: rotate(90deg);">flip</span>
+                        </button>
+                    </div>
+                    <div class="slider-group">
+                        <div class="label-row"><label>Rotation</label><span>{{ angle }}&deg;</span></div>
+                        <input type="range" min="0" max="360" [(ngModel)]="angle"
+                            (input)="onPropertyChange('angle', angle)">
+                    </div>
+                </div>
+                <div class="divider"></div>
+            </div>
+
+            <div *ngIf="currentObject?.type === 'image'; else noImageFilter">
+                <div class="property-card">
+                    <div class="section-title">Filter Presets</div>
+                    <div class="filters-grid">
+                        <div class="filter-card" (click)="applyFilter('None')"
+                            [class.active]="currentFilter === 'None'">
+                            <div class="preview none"></div>
+                            <span>None</span>
+                        </div>
+                        <div class="filter-card" (click)="applyFilter('Grayscale')"
+                            [class.active]="currentFilter === 'Grayscale'">
+                            <div class="preview grayscale"></div>
+                            <span>Grayscale</span>
+                        </div>
+                        <div class="filter-card" (click)="applyFilter('Sepia')"
+                            [class.active]="currentFilter === 'Sepia'">
+                            <div class="preview sepia"></div>
+                            <span>Sepia</span>
+                        </div>
+                        <div class="filter-card" (click)="applyFilter('Invert')"
+                            [class.active]="currentFilter === 'Invert'">
+                            <div class="preview invert"></div>
+                            <span>Invert</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="property-card">
+                    <div class="section-title">Manual Adjustments</div>
+                    <div class="adjustment-sliders">
+                        <div class="slider-group">
+                            <div class="label-row"><label>Brightness</label><span>{{ brightness }}</span></div>
+                            <input type="range" min="-100" max="100" [ngModel]="brightness"
+                                (input)="updateBrightness($any($event.target).value)">
+                        </div>
+                        <div class="slider-group">
+                            <div class="label-row"><label>Contrast</label><span>{{ contrast }}</span></div>
+                            <input type="range" min="-100" max="100" [ngModel]="contrast"
+                                (input)="updateContrast($any($event.target).value)">
+                        </div>
+                        <div class="slider-group">
+                            <div class="label-row"><label>Saturation</label><span>{{ saturation }}</span></div>
+                            <input type="range" min="-100" max="100" [ngModel]="saturation"
+                                (input)="updateSaturation($any($event.target).value)">
+                        </div>
+                        <div class="slider-group">
+                            <div class="label-row"><label>Blur</label><span>{{ blurAmount }}px</span></div>
+                            <input type="range" min="0" max="20" [(ngModel)]="blurAmount"
+                                (input)="applyBlur(blurAmount)">
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <div class="property-card">
+                    <div class="section-title">Edge Style / Mask</div>
+                    <div class="filters-grid">
+                        <div class="filter-card" [class.active]="maskType === 'none'" (click)="applyMask('none')">
+                            <div class="preview none"></div>
+                            <span>None</span>
+                        </div>
+                        <div class="filter-card" [class.active]="maskType === 'cloud'" (click)="applyMask('cloud')">
+                            <div class="preview" style="display:flex; justify-content:center; align-items:center;">
+                                <span class="material-symbols-outlined"
+                                    style="color:white; font-size:24px;">cloud</span>
+                            </div>
+                            <span>Cloud</span>
+                        </div>
+                        <div class="filter-card" [class.active]="maskType === 'wave'" (click)="applyMask('wave')">
+                            <div class="preview" style="display:flex; justify-content:center; align-items:center;">
+                                <span class="material-symbols-outlined"
+                                    style="color:white; font-size:24px;">waves</span>
+                            </div>
+                            <span>Wave</span>
+                        </div>
+                        <div class="filter-card" [class.active]="maskType === 'organic'" (click)="applyMask('organic')">
+                            <div class="preview" style="display:flex; justify-content:center; align-items:center;">
+                                <span class="material-symbols-outlined"
+                                    style="color:white; font-size:24px;">water_drop</span>
+                            </div>
+                            <span>Organic</span>
+                        </div>
+                    </div>
+
+                    <div class="adjustment-sliders" *ngIf="maskType !== 'none'">
+                        <div class="slider-group">
+                            <div class="label-row"><label>Mask Depth</label><span>{{ maskHeight }}%</span></div>
+                            <input type="range" min="0" max="60" [(ngModel)]="maskHeight"
+                                (input)="updateMaskHeight($any($event.target).value)">
+                        </div>
+
+                        <div class="tool-row">
+                            <div class="button-group">
+                                <button class="icon-btn" [class.active]="maskFlip" (click)="toggleMaskFlip()"
+                                    title="Flip Mask Vertical">
+                                    <span class="material-symbols-outlined">flip</span>
+                                    <span style="font-size:12px; font-weight:600; margin-left:6px;">Flip Edge</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <ng-template #noImageFilter>
+                <div class="empty-state">
+                    <span class="material-symbols-outlined">image_not_supported</span>
+                    <p>Select an image to apply filters and effects</p>
+                </div>
+            </ng-template>
+        </div>
+
+        <!-- Cutouts Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'cutouts'">
+            <div class="section-title">MY CUTOUTS</div>
+            <p class="section-desc">Images with backgrounds removed are saved here automatically.</p>
+
+            <div class="cutouts-grid">
+                <div class="cutout-card" *ngFor="let cutout of bannerService.cutouts()">
+                    <div class="thumb-wrapper" (click)="bannerService.addCutoutToCanvas(cutout)">
+                        <img [src]="cutout.thumbnail" alt="Cutout">
+                        <div class="overlay">
+                            <button class="btn-add">Add to Design</button>
+                        </div>
+                    </div>
+                    <div class="cutout-info">
+                        <span class="name" (click)="bannerService.renameCutoutUI(cutout)">{{ cutout.name }}</span>
+                        <div class="card-actions">
+                            <button class="btn-icon" (click)="bannerService.renameCutoutUI(cutout)" title="Rename">
+                                <span class="material-symbols-outlined">edit</span>
+                            </button>
+                            <button class="btn-delete" (click)="bannerService.deleteCutout(cutout.id)" title="Delete">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="empty-state" *ngIf="bannerService.cutouts().length === 0">
+                <span class="material-symbols-outlined">content_cut</span>
+                <p>No cutouts yet.<br>Use "Remove Background" on any image to create one!</p>
+            </div>
+        </div>
+
+        <!-- 5. Background Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'background'">
+            <div class="bg-tabs">
+                <button [class.active]="bannerService.bgType() === 'solid'"
+                    (click)="bannerService.bgType.set('solid')">Solid</button>
+                <button [class.active]="bannerService.bgType() === 'gradient'"
+                    (click)="bannerService.bgType.set('gradient')">Gradient</button>
+                <button [class.active]="bannerService.bgType() === 'pattern'"
+                    (click)="bannerService.bgType.set('pattern')">Pattern</button>
+                <!-- <button [class.active]="bannerService.bgType() === 'gravity'"
+                    (click)="bannerService.bgType.set('gravity')">Anti-Gravity</button> -->
+            </div>
+
+            <div class="bg-content">
+                <!-- Solid -->
+                <div *ngIf="bannerService.bgType() === 'solid'">
+                    <div class="section-title">Palette</div>
+                    <div class="color-grid">
+                        <button
+                            *ngFor="let c of ['#ffffff', '#000000', '#f3f4f6', '#9ca3af', '#78716c', '#1e293b', '#e11d48', '#db2777', '#c026d3', '#9333ea', '#7c3aed', '#4f46e5', '#3b82f6', '#2563eb', '#0891b2', '#06b6d4', '#059669', '#10b981', '#65a30d', '#f59e0b', '#d97706', '#ea580c', '#ef4444']"
+                            [style.background-color]="c" (click)="setSolidBg(c)"></button>
+                    </div>
+                    <div class="custom-picker">
+                        <label>Custom Color</label>
+                        <div class="color-picker-wrapper">
+                            <div class="color-swatch-btn" [style.background-color]="bgSolidColor">
+                                <input type="color" [ngModel]="bgSolidColor"
+                                    (input)="setSolidBg($any($event.target).value)">
+                            </div>
+                            <span class="hex-text">{{ bgSolidColor }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gradient -->
+                <div *ngIf="bannerService.bgType() === 'gradient'" class="gradient-editor">
+                    <div class="section-title">COLOUR COMBINATION</div>
+                    <div class="gradient-colors-row">
+                        <div class="color-picker-wrapper">
+                            <div class="color-swatch-btn" [style.background-color]="bgGradColor1">
+                                <input type="color" [(ngModel)]="bgGradColor1">
+                            </div>
+                            <span class="hex-text">{{ bgGradColor1 }}</span>
+                        </div>
+                        <span class="gradient-arrow">→</span>
+                        <div class="color-picker-wrapper">
+                            <div class="color-swatch-btn" [style.background-color]="bgGradColor2">
+                                <input type="color" [(ngModel)]="bgGradColor2">
+                            </div>
+                            <span class="hex-text">{{ bgGradColor2 }}</span>
+                        </div>
+                    </div>
+                    <button class="btn-update-bg" (click)="setGradientBg()">Update Background</button>
+                </div>
+
+                <!-- Pattern -->
+                <div *ngIf="bannerService.bgType() === 'pattern'">
+                    <div class="section-title">PATTERNS</div>
+                    <div class="pattern-grid">
+                        <button class="pattern-item dotted" (click)="setPatternBg('dots')" title="Dots"></button>
+                        <button class="pattern-item stripes" (click)="setPatternBg('stripes')" title="Stripes"></button>
+                        <button class="pattern-item waves" (click)="setPatternBg('waves')" title="Waves"></button>
+                        <button class="pattern-item dots-large" (click)="setPatternBg('dots-large')"
+                            title="Large Dots"></button>
+                        <button class="pattern-item checkerboard" (click)="setPatternBg('checkerboard')"
+                            title="Checkerboard"></button>
+                        <button class="pattern-item diagonal" (click)="setPatternBg('diagonal')"
+                            title="Diagonal"></button>
+                        <button class="pattern-item grid" (click)="setPatternBg('grid')" title="Grid"></button>
+
+                        <!-- NEW PATTERNS -->
+                        <button class="pattern-item" (click)="setPatternBg('cross')" title="Crosses">
+                            <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('plus')" title="Plus">
+                            <span class="material-symbols-outlined" style="font-size:16px;">add</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('circles')" title="Circles">
+                            <span class="material-symbols-outlined"
+                                style="font-size:16px;">radio_button_unchecked</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('diamonds')" title="Diamonds">
+                            <span class="material-symbols-outlined" style="font-size:16px;">diamond</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('zigzag')" title="Zigzag">
+                            <span class="material-symbols-outlined" style="font-size:16px;">ssid_chart</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('triangles')" title="Triangles">
+                            <span class="material-symbols-outlined" style="font-size:16px;">change_history</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('bricks')" title="Bricks">
+                            <span class="material-symbols-outlined" style="font-size:16px;">grid_view</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('scales')" title="Scales">
+                            <span class="material-symbols-outlined" style="font-size:16px;">bubble_chart</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('stars')" title="Stars">
+                            <span class="material-symbols-outlined" style="font-size:16px;">star</span>
+                        </button>
+                        <button class="pattern-item" (click)="setPatternBg('hearts')" title="Hearts">
+                            <span class="material-symbols-outlined" style="font-size:16px;">favorite</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Anti-Gravity
+                <div *ngIf="bannerService.bgType() === 'gravity'">
+                    <div class="section-title">Anti-Gravity Effect</div>
+
+                    <div class="gravity-uploader">
+                        <p class="description">
+                            Upload an abstract image to apply the weightless, floating effect.
+                            <br><small>Colors will blend softly with a light overlay.</small>
+                        </p>
+
+                        <input type="file" #gravityInput (change)="onGravityFileSelected($event)" accept="image/*"
+                            class="file-input">
+
+                        <button class="upload-btn" (click)="gravityInput.click()">
+                            <span class="material-symbols-outlined">upload_file</span>
+                            Upload Background
+                        </button>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="gravity-info">
+                        <div class="info-row">
+                            <span class="material-symbols-outlined">blur_on</span>
+                            <span>Soft Blur Applied</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="material-symbols-outlined">opacity</span>
+                            <span>95% Opacity</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="material-symbols-outlined">gradient</span>
+                            <span>Light Overlay</span>
+                        </div>
+                    </div>
+                </div> -->
+            </div>
+        </div>
+
+        <!-- 6. Layers Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'layers'">
+            <!-- Layers Header Actions -->
+            <!-- <div class="layers-header-actions"> ... </div> -->
+
+            <div class="layers-list">
+                <!-- reversedLayers() Signal gives us Top-to-Bottom order naturally -->
+                <div class="layers-container" cdkDropList (cdkDropListDropped)="drop($event)">
+                    <div class="layer-item" *ngFor="let obj of reversedLayers()" cdkDrag
+                        [class.active]="selectedObject() === obj" [class.locked]="obj.lockMovementX"
+                        [class.hidden]="!obj.visible" (click)="selectLayer(obj)" (mouseenter)="onLayerHover(obj)"
+                        (mouseleave)="onLayerHoverOut()">
+
+                        <!-- Drag Handle -->
+                        <div class="drag-handle" cdkDragHandle>
+                            <span class="material-symbols-outlined">drag_indicator</span>
+                        </div>
+
+                        <!-- Preview or Icon -->
+                        <div class="layer-thumb">
+                            <img *ngIf="getLayerPreview(obj)" [src]="getLayerPreview(obj)" class="thumb-img">
+                            <span *ngIf="!getLayerPreview(obj)" class="material-symbols-outlined icon">{{
+                                getLayerIcon(obj.type!) }}</span>
+                        </div>
+
+                        <!-- Name -->
+                        <span class="name">{{ getLayerName(obj) }}</span>
+
+                        <!-- Controls -->
+                        <div class="actions">
+                            <!-- Ordering Buttons (still useful) -->
+                            <div class="order-btns">
+                                <button (click)="$event.stopPropagation(); moveLayer(obj, 'up')" title="Bring Forward">
+                                    <span class="material-symbols-outlined">expand_less</span>
+                                </button>
+                                <button (click)="$event.stopPropagation(); moveLayer(obj, 'down')"
+                                    title="Send Backward">
+                                    <span class="material-symbols-outlined">expand_more</span>
+                                </button>
+                            </div>
+
+                            <!-- Lock -->
+                            <button (click)="$event.stopPropagation(); toggleLock(obj)"
+                                [class.active]="obj.lockMovementX" title="Lock/Unlock">
+                                <span class="material-symbols-outlined">{{ obj.lockMovementX ? 'lock' : 'lock_open'
+                                    }}</span>
+                            </button>
+
+                            <!-- Visibility -->
+                            <button (click)="$event.stopPropagation(); toggleVisibility(obj)"
+                                [class.active]="!obj.visible" title="Hide/Show">
+                                <span class="material-symbols-outlined">{{ obj.visible ? 'visibility' : 'visibility_off'
+                                    }}</span>
+                            </button>
+
+                            <!-- Delete -->
+                            <button class="btn-delete" (click)="$event.stopPropagation(); deleteLayer(obj)"
+                                title="Delete Layer">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </div>
+
+                        <!-- Drag Preview -->
+                        <div *cdkDragPreview class="layer-drag-preview">
+                            <div class="layer-thumb">
+                                <img *ngIf="getLayerPreview(obj)" [src]="getLayerPreview(obj)" class="thumb-img">
+                                <span *ngIf="!getLayerPreview(obj)" class="material-symbols-outlined icon">{{
+                                    getLayerIcon(obj.type!) }}</span>
+                            </div>
+                            <span class="name">{{ getLayerName(obj) }}</span>
+                        </div>
+
+                        <!-- Placeholder -->
+                        <div *cdkDragPlaceholder class="layer-drag-placeholder"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="empty-state" *ngIf="canvasObjects().length === 0">
+                <span class="material-symbols-outlined">layers_clear</span>
+                <p>No layers on canvas yet</p>
+            </div>
+        </div>
+
+        <!-- 7. Projects Panel (Saved Documents) -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'projects'">
+            <div class="projects-grid">
+                <div class="project-card" *ngFor="let proj of bannerService.savedProjects()">
+                    <div class="thumb-wrapper" (click)="bannerService.loadProject(proj.id)">
+                        <img [src]="proj.thumbnail" *ngIf="proj.thumbnail">
+                        <div class="no-thumb" *ngIf="!proj.thumbnail">
+                            <span class="material-symbols-outlined">image</span>
+                        </div>
+                        <div class="overlay">
+                            <button class="btn-open">Open</button>
+                        </div>
+                    </div>
+                    <div class="proj-info">
+                        <div class="proj-name">{{ proj.name }}</div>
+                        <div class="proj-meta">
+                            <span>{{ proj.date | date:'MMM d, h:mm a' }}</span>
+                            <button (click)="bannerService.deleteProject(proj.id)" title="Delete Design">
+                                <span class="material-symbols-outlined">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="empty-state" *ngIf="bannerService.savedProjects().length === 0">
+                <span class="material-symbols-outlined">folder_open</span>
+                <p>No saved projects yet.<br>Save your first design to see it here!</p>
+            </div>
+        </div>
+    </div>
+</aside>

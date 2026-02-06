@@ -1,0 +1,155 @@
+<div class="templates-panel">
+    <!-- Top Action Bar -->
+    <header class="panel-header">
+        <div class="save-actions">
+            <button class="action-button primary" (click)="saveAsTemplate()" title="Save as Template">
+                <span class="material-symbols-outlined">auto_awesome</span>
+                <span>Template</span>
+            </button>
+            <button class="action-button primary" (click)="saveAsDesign()" title="Save as Design">
+                <span class="material-symbols-outlined">design_services</span>
+                <span>Design</span>
+            </button>
+            <button class="action-button primary" (click)="saveAsBackground()" title="Save as Background">
+                <span class="material-symbols-outlined">wallpaper</span>
+                <span>BG</span>
+            </button>
+        </div>
+
+
+    </header>
+
+    <div class="panel-content-scroll">
+        <!-- GLOBAL SEARCH -->
+        <div class="search-bar">
+            <span class="material-symbols-outlined">search</span>
+            <input type="text" placeholder="Search saved items..." [(ngModel)]="searchQuery">
+        </div>
+
+        <!-- BACKGROUNDS SECTION -->
+        <section class="content-section" *ngIf="filteredBackgrounds().length > 0">
+            <div class="section-header">
+                <h3>Saved Backgrounds</h3>
+                <span class="count">{{ filteredBackgrounds().length }}</span>
+            </div>
+            <div class="items-grid horizontal">
+                <div class="item-card small" *ngFor="let t of filteredBackgrounds()" (click)="applyTemplate(t)">
+                    <div class="item-thumb">
+                        <img *ngIf="t.thumbnail" [src]="t.thumbnail">
+                        <div class="no-thumb" *ngIf="!t.thumbnail"><span
+                                class="material-symbols-outlined">wallpaper</span></div>
+                        <button class="card-delete-btn" (click)="deleteTemplate($event, t)">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                    <div class="item-name">{{ t.name }}</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- DESIGNS SECTION (Add to Canvas) -->
+        <section class="content-section" *ngIf="filteredDesigns().length > 0">
+            <div class="section-header">
+                <h3>My Ready Designs</h3>
+                <span class="count">{{ filteredDesigns().length }}</span>
+            </div>
+            <div class="items-grid">
+                <div class="item-card" *ngFor="let t of filteredDesigns()">
+                    <div class="item-thumb-full">
+                        <img *ngIf="t.thumbnail" [src]="t.thumbnail">
+                        <div class="item-overlay">
+                            <button class="overlay-btn open" (click)="applyTemplate(t)" title="Open (Replace Page)">
+                                <span class="material-symbols-outlined">open_in_new</span>
+                                <span>Open</span>
+                            </button>
+                            <button class="overlay-btn add" (click)="addToCanvas(t)" title="Add to Page">
+                                <span class="material-symbols-outlined">add_circle</span>
+                                <span>Add</span>
+                            </button>
+                        </div>
+                        <button class="card-delete-btn top-right" (click)="deleteTemplate($event, t)">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                    <div class="item-name-centered">{{ t.name }}</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TEMPLATES SECTION -->
+        <section class="content-section" *ngIf="filteredTemplates().length > 0">
+            <div class="section-header">
+                <h3>Projects & Templates</h3>
+                <span class="count">{{ filteredTemplates().length }}</span>
+            </div>
+            <div class="items-grid">
+                <div class="item-card large" *ngFor="let t of filteredTemplates()" (click)="applyTemplate(t)">
+                    <div class="item-thumb-large">
+                        <img *ngIf="t.thumbnail" [src]="t.thumbnail">
+                        <div class="no-thumb" *ngIf="!t.thumbnail"><span
+                                class="material-symbols-outlined">dashboard_customize</span></div>
+                        <button class="card-delete-btn" (click)="deleteTemplate($event, t)">
+                            <span class="material-symbols-outlined">delete</span>
+                        </button>
+                    </div>
+                    <div class="item-info">
+                        <span class="name">{{ t.name }}</span>
+                        <span class="badge">{{ t.category }}</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PRESETS (Original Backgrounds) -->
+        <section class="content-section">
+            <div class="section-header">
+                <h3>Quick Presets</h3>
+            </div>
+            <div class="presets-container">
+                <div class="color-row">
+                    <div *ngFor="let c of colors" class="dot" [style.background-color]="c" (click)="setSolidBg(c)">
+                    </div>
+                </div>
+                <div class="gradient-row">
+                    <div *ngFor="let g of gradients" class="grad-dot" [style.background]="g.css"
+                        (click)="setGradientBg(g)"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Toast -->
+    <div class="save-feedback" *ngIf="showSaveSuccess()">
+        <span class="material-symbols-outlined">check_circle</span>
+        <span>Saved Successfully!</span>
+    </div>
+
+    <!-- SAVE TEMPLATE MODAL -->
+    <div class="modal-overlay" *ngIf="isSaveModalOpen">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3>Save as {{ saveCategory }}</h3>
+                <button class="close-btn" (click)="closeSaveModal()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>Name</label>
+                    <input type="text" [(ngModel)]="templateNameInput" [placeholder]="'My new ' + saveCategory"
+                        autofocus>
+                </div>
+                <div class="category-indicator">
+                    <span class="material-symbols-outlined">category</span>
+                    <p>This will be saved in your <strong>{{ saveCategory }}s</strong> collection.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" (click)="closeSaveModal()">Cancel</button>
+                <button class="btn-save" (click)="confirmSaveTemplate()" [disabled]="!templateNameInput.trim()">
+                    Save to Collection
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

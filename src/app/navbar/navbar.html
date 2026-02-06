@@ -1,0 +1,200 @@
+<nav class="toolbar-container">
+    <!-- Left Section: Logo & Branding -->
+    <div class="toolbar-left">
+        <div class="brand-logo">
+            <div class="logo-icon-box">D</div>
+            <div class="brand-name">Design<span>Hub</span></div>
+        </div>
+    </div>
+
+    <!-- Center Section: Main Tools -->
+    <div class="toolbar-center">
+        <!-- Crop Mode Active -->
+        <div class="tool-group horizontal" *ngIf="isCropping">
+            <div class="context-label">Crop Image</div>
+            <div class="divider"></div>
+            <button (click)="cancelCrop()" class="nav-tool-btn cancel-btn" title="Cancel Crop">
+                <span class="material-symbols-outlined">close</span>
+                <span class="tool-label">Cancel</span>
+            </button>
+            <button (click)="applyCrop()" class="nav-tool-btn apply-btn" title="Apply Crop">
+                <span class="material-symbols-outlined">check</span>
+                <span class="tool-label">Apply</span>
+            </button>
+        </div>
+
+        <!-- Standard Tools (Hidden when cropping) -->
+        <div class="tool-group horizontal" *ngIf="!isCropping">
+            <!-- Canvas Size Selector -->
+            <div class="dropdown-wrapper">
+                <button (click)="toggleMenu('canvasSize')" class="nav-tool-btn canvas-size-btn"
+                    [class.active]="activeMenu === 'canvasSize'" title="Canvas Size">
+                    <span class="material-symbols-outlined">aspect_ratio</span>
+                    <span class="size-label">{{ canvasWidth }} &times; {{ canvasHeight }} px</span>
+                    <span class="material-symbols-outlined arrow">expand_more</span>
+                </button>
+
+                <!-- Canvas Size Panel -->
+                <div class="dropdown-menu canvas-size-panel" *ngIf="activeMenu === 'canvasSize'"
+                    (click)="$event.stopPropagation()">
+                    <div class="panel-header">Canvas Size</div>
+
+                    <!-- Presets Grid -->
+                    <div class="presets-grid">
+                        <button *ngFor="let p of presets" class="preset-card" (click)="setCanvasSize(p.width, p.height)"
+                            [class.active]="canvasWidth === p.width && canvasHeight === p.height">
+                            <span class="material-symbols-outlined">{{ p.icon }}</span>
+                            <div class="preset-info">
+                                <span class="preset-name">{{ p.name }}</span>
+                                <span class="preset-dim">{{ p.width }} &times; {{ p.height }}</span>
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="divider-horiz"></div>
+
+                    <!-- Custom Size -->
+                    <div class="custom-size-section">
+                        <div class="section-title">Custom Size</div>
+                        <div class="size-inputs">
+                            <div class="input-group">
+                                <label>Width</label>
+                                <input type="number" [ngModel]="canvasWidth" (ngModelChange)="updateCustomWidth($event)"
+                                    class="size-input">
+                            </div>
+
+                            <button class="btn-icon lock-btn" [class.active]="lockRatio" (click)="toggleLock()"
+                                title="Lock Aspect Ratio">
+                                <span class="material-symbols-outlined" *ngIf="lockRatio">lock</span>
+                                <span class="material-symbols-outlined" *ngIf="!lockRatio">lock_open</span>
+                            </button>
+
+                            <div class="input-group">
+                                <label>Height</label>
+                                <input type="number" [ngModel]="canvasHeight"
+                                    (ngModelChange)="updateCustomHeight($event)" class="size-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Warning & Action -->
+                    <div class="panel-footer">
+                        <div class="warning-text">
+                            <span class="material-symbols-outlined">info</span>
+                            Change may reposition elements
+                        </div>
+                        <button class="btn-primary-sm" (click)="applyCustomSize()">Apply</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <button (click)="setSelectMode()" class="nav-tool-btn"
+                [class.active]="!bannerService.isDrawingMode() && !bannerService.isErasing()" title="Select Tool (V)">
+                <span class="material-symbols-outlined">near_me</span>
+                <span class="tool-label">Select</span>
+            </button>
+
+            <!-- Crop Button (Visible only when Image is selected) -->
+            <button *ngIf="selectedObject?.type === 'image'" (click)="startCrop()" class="nav-tool-btn"
+                title="Crop Image">
+                <span class="material-symbols-outlined">crop</span>
+                <span class="tool-label">Crop</span>
+            </button>
+
+            <!-- Brush Dropdown -->
+            <div class="dropdown-wrapper">
+                <button (click)="toggleMenu('brush')" class="nav-tool-btn"
+                    [class.active]="activeMenu === 'brush' || bannerService.isDrawingMode()" title="Brush Tool (B)">
+                    <span class="material-symbols-outlined">brush</span>
+                    <span class="tool-label">Brush</span>
+                    <span class="material-symbols-outlined arrow"
+                        [class.rotated]="activeMenu === 'brush'">expand_more</span>
+                </button>
+                <div class="dropdown-menu" *ngIf="activeMenu === 'brush'">
+                    <button (click)="selectBrush('pencil')" class="menu-item"
+                        [class.active]="bannerService.brushType() === 'pencil'">
+                        <span class="material-symbols-outlined">edit</span> Pencil
+                    </button>
+                    <button (click)="selectBrush('spray')" class="menu-item"
+                        [class.active]="bannerService.brushType() === 'spray'">
+                        <span class="material-symbols-outlined">blur_on</span> Spray
+                    </button>
+                    <button (click)="selectBrush('circle')" class="menu-item"
+                        [class.active]="bannerService.brushType() === 'circle'">
+                        <span class="material-symbols-outlined">bubble_chart</span> Splatter
+                    </button>
+                    <button (click)="selectBrush('highlighter')" class="menu-item"
+                        [class.active]="bannerService.brushType() === 'highlighter'">
+                        <span class="material-symbols-outlined">ink_highlighter</span> Highlighter
+                    </button>
+                    <button (click)="selectBrush('dotted')" class="menu-item"
+                        [class.active]="bannerService.brushType() === 'dotted'">
+                        <span class="material-symbols-outlined">more_horiz</span> Dotted
+                    </button>
+                </div>
+            </div>
+
+            <button (click)="toggleEraser()" class="nav-tool-btn" [class.active]="bannerService.isErasing()"
+                title="Eraser Tool (E)">
+                <span class="material-symbols-outlined">ink_eraser</span>
+                <span class="tool-label">Eraser</span>
+            </button>
+
+            <!-- Brush/Eraser Global Properties -->
+            <div class="drawing-properties-group" *ngIf="bannerService.isDrawingMode() || bannerService.isErasing()">
+                <div class="divider"></div>
+
+                <div class="slider-prop-item">
+                    <span class="material-symbols-outlined icon">line_weight</span>
+                    <input type="range" min="1" max="100" [value]="bannerService.brushSize()"
+                        (input)="bannerService.updateBrushSize($any($event.target).value)" class="prop-slider">
+                    <span class="prop-val">{{ bannerService.brushSize() }}px</span>
+                </div>
+
+                <div class="color-picker-wrapper compact" *ngIf="bannerService.isDrawingMode()">
+                    <div class="color-swatch-btn" [style.background-color]="bannerService.brushColor()">
+                        <input type="color" [value]="bannerService.brushColor()"
+                            (input)="utilUpdateBrushColor($any($event))">
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <button (click)="addText()" class="nav-tool-btn" title="Add Text (T)">
+                <span class="material-symbols-outlined">title</span>
+                <span class="tool-label">Text</span>
+            </button>
+
+            <button (click)="triggerUpload()" class="nav-tool-btn" title="Upload Image (U)">
+                <span class="material-symbols-outlined">image</span>
+                <span class="tool-label">Upload</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Right Section: Actions -->
+    <div class="toolbar-right" *ngIf="!isCropping">
+        <button (click)="undo()" class="nav-tool-btn" title="Undo (Ctrl+Z)">
+            <span class="material-symbols-outlined">undo</span>
+        </button>
+        <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)">
+            <span class="material-symbols-outlined">redo</span>
+        </button>
+        <div class="divider"></div>
+
+        <button (click)="startNewDesign()" class="btn-outline">New Design</button>
+        <button (click)="saveProject()" class="btn-primary-outline">
+            <span class="material-symbols-outlined" style="font-size: 20px;">save</span>
+            Save
+        </button>
+        <button (click)="downloadPNG()" class="btn-primary">
+            <span class="material-symbols-outlined" style="font-size: 20px;">download</span>
+            Download
+        </button>
+    </div>
+
+    <input type="file" id="imageUpload" style="display: none;" (change)="uploadImage($event)" accept="image/*">
+</nav>

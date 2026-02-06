@@ -1,0 +1,120 @@
+.editor-workspace {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background-color: #f3f4f6;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+
+    .canvas-viewport {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: auto;
+        padding: 40px;
+    }
+
+    .canvas-board {
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        background: white;
+    }
+
+    // Floating Bottom Bar
+    .bottom-toolbar {
+        position: absolute;
+        bottom: 24px;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        right: auto !important;
+        /* Explicitly unset right to prevent conflicts */
+        display: flex;
+        align-items: center;
+        background: white;
+        padding: 6px 12px;
+        border-radius: 100px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+        z-index: 100;
+        animation: fadeIn 0.3s ease-out;
+
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+
+            .zoom-action-btn {
+                background: transparent;
+                border: none;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                color: #4b5563;
+                transition: background 0.2s;
+
+                &:hover {
+                    background: #f3f4f6;
+                    color: #111827;
+                }
+
+                .material-symbols-outlined {
+                    font-size: 18px;
+                }
+            }
+
+            .zoom-display {
+                font-size: 13px;
+                font-weight: 600;
+                color: #374151;
+                min-width: 40px;
+                text-align: center;
+                font-variant-numeric: tabular-nums;
+            }
+        }
+
+        .vertical-divider {
+            width: 1px;
+            height: 16px;
+            background: #e5e7eb;
+        }
+
+        .fit-screen-btn {
+            background: transparent;
+            border: none;
+            padding: 4px;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #4b5563;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+
+            &:hover {
+                background: #f3f4f6;
+                color: #111827;
+            }
+
+            .material-symbols-outlined {
+                font-size: 20px;
+            }
+        }
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}

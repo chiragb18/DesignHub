@@ -1,1 +1,96 @@
-/* You can add global styles to this file, and also import other style files */
+@import "tailwindcss";
+
+@theme {
+    --color-primary: #832ce8;
+    --color-background-light: #ffffff;
+    --color-background-dark: #0e1318;
+    --font-display: "Outfit", "Inter", sans-serif;
+    --font-sans: "Inter", sans-serif;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+}
+
+@layer base {
+    html,
+    body {
+        font-family: 'Inter', sans-serif;
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    app-root {
+        display: block;
+        height: 100%;
+        width: 100%;
+    }
+}
+
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    user-select: none;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+    background: #dbd0e7;
+    border-radius: 10px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-resizer {
+    width: 2px;
+    background: #f1f3f5;
+    cursor: col-resize;
+    position: relative;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover,
+    &.resizing {
+        background: #832ce8;
+        width: 4px;
+
+        .resizer-inner {
+            opacity: 1;
+        }
+    }
+
+    .resizer-inner {
+        position: absolute;
+        width: 12px;
+        height: 24px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        opacity: 0;
+        transition: opacity 0.2s;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+        span {
+            width: 2px;
+            height: 2px;
+            background: #9ca3af;
+            border-radius: 50%;
+        }
+    }
+}

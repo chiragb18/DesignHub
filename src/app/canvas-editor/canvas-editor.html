@@ -1,0 +1,25 @@
+<main class="editor-workspace">
+    <div class="canvas-viewport">
+        <!-- Canvas Board with Artboard Shadow -->
+        <div class="canvas-board">
+            <canvas id="editorCanvas"></canvas>
+        </div>
+    </div>
+
+    <!-- Floating Bottom Action Bar -->
+    <div class="bottom-toolbar">
+        <div class="zoom-controls">
+            <button (click)="zoomOut()" class="zoom-action-btn" title="Zoom Out">
+                <span class="material-symbols-outlined">remove</span>
+            </button>
+            <span class="zoom-display">{{ (zoomLevel() * 100).toFixed(0) }}%</span>
+            <button (click)="zoomIn()" class="zoom-action-btn" title="Zoom In">
+                <span class="material-symbols-outlined">add</span>
+            </button>
+        </div>
+        <div class="vertical-divider"></div>
+        <button (click)="resetZoom()" class="fit-screen-btn" title="Fit to Screen">
+            <span class="material-symbols-outlined">crop_free</span>
+        </button>
+    </div>
+</main>
