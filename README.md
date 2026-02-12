@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # BannerUIEditor
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.4.
@@ -57,3 +58,7 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+=======
+# DesignHub
+Canva-style AI Design Editor built with Angular, Fabric.js, and IndexedDB
+>>>>>>> 0fdfe0fe9b5d682d13906bab3fd546b1e61f7902
