@@ -262,8 +262,7 @@
                 <!-- Progress Loading State -->
                 <div class="ai-progress-status" *ngIf="bannerService.isRemovingBg()">
                     <div class="progress-info">
-                        <span>Removing Background...</span>
-                        <span>{{ bannerService.bgRemovalProgress() }}%</span>
+                        <span>{{ bannerService.bgRemovalStatus() }}</span>
                     </div>
                     <div class="progress-bar-bg">
                         <div class="progress-bar-fill" [style.width.%]="bannerService.bgRemovalProgress()"></div>
@@ -457,8 +456,6 @@
                     (click)="bannerService.bgType.set('gradient')">Gradient</button>
                 <button [class.active]="bannerService.bgType() === 'pattern'"
                     (click)="bannerService.bgType.set('pattern')">Pattern</button>
-                <!-- <button [class.active]="bannerService.bgType() === 'gravity'"
-                    (click)="bannerService.bgType.set('gravity')">Anti-Gravity</button> -->
             </div>
 
             <div class="bg-content">

@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BannerService } from '../services/banner.service';
+import { NotificationService } from '../services/notification.service';
 
 @Component({
   selector: 'app-navbar',
@@ -12,6 +13,7 @@ import { BannerService } from '../services/banner.service';
 })
 export class NavbarComponent {
   public bannerService = inject(BannerService);
+  private notificationService = inject(NotificationService);
 
   activeMenu: string | null = null;
 
@@ -135,23 +137,35 @@ export class NavbarComponent {
     if (activeId) {
       // Already has a project open, just save
       await this.bannerService.saveProject();
-      alert('Changes saved successfully!');
+      this.notificationService.success('Changes saved successfully!');
+      this.closeMenus();
     } else {
       // New project, ask for name
-      const name = prompt('Enter design name:', 'Untitled Design');
-      if (name) {
-        await this.bannerService.saveProject(name);
-        this.bannerService.activeTab.set('projects');
-        alert('Project saved successfully! You can find it in the "Projects" tab.');
-      }
+      this.notificationService.prompt(
+        'Save Design',
+        'Enter a name for your design:',
+        'Untitled Design',
+        async (name) => {
+          if (name) {
+            await this.bannerService.saveProject(name);
+            this.bannerService.activeTab.set('projects');
+            this.notificationService.success('Project saved successfully!');
+          }
+        }
+      );
     }
   }
 
   startNewDesign() {
-    if (confirm('Create a new design? Current unsaved changes might be lost.')) {
-      this.bannerService.clearCanvas();
-      this.bannerService.activeProjectId.set(null);
-    }
+    this.notificationService.confirm(
+      'New Design',
+      'Create a new design? Current unsaved changes will be lost.',
+      () => {
+        this.bannerService.clearCanvas();
+        this.bannerService.activeProjectId.set(null);
+        this.notificationService.info('Started a new design');
+      }
+    );
   }
 
   downloadPNG() {
@@ -173,6 +187,44 @@ export class NavbarComponent {
 
   get isCropping() {
     return this.bannerService.isCropping();
+  }
+
+  async saveAsTemplate() {
+    this.notificationService.prompt('Save as Template', 'Enter template name:', 'My Template', async (name) => {
+      if (name) {
+        await this.bannerService.saveTemplate(name, 'Template');
+        this.notificationService.success('Template saved to library!');
+        this.closeMenus();
+      }
+    });
+  }
+
+  async saveAsDesign() {
+    this.notificationService.prompt('Save as Design', 'Enter design name:', 'My Design', async (name) => {
+      if (name) {
+        await this.bannerService.saveTemplate(name, 'Design');
+        this.notificationService.success('Design saved to library!');
+        this.closeMenus();
+      }
+    });
+  }
+
+  async saveAsBackground() {
+    this.notificationService.prompt('Save Background', 'Enter background name:', 'My Background', async (name) => {
+      if (name) {
+        await this.bannerService.saveTemplate(name, 'Background');
+        this.notificationService.success('Background saved to library!');
+        this.closeMenus();
+      }
+    });
+  }
+
+  toggleLanguage(lang: 'en' | 'mr') {
+    this.bannerService.typingLanguage.set(lang);
+  }
+
+  get currentLanguage() {
+    return this.bannerService.typingLanguage();
   }
 
   get selectedObject() {

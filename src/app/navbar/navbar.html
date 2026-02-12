@@ -183,13 +183,47 @@
         <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)">
             <span class="material-symbols-outlined">redo</span>
         </button>
+
+        <div class="divider"></div>
+
+        <!-- Language Toggle -->
+        <div class="language-toggle">
+            <button class="lang-btn" [class.active]="currentLanguage === 'en'" (click)="toggleLanguage('en')">
+                EN
+            </button>
+            <button class="lang-btn" [class.active]="currentLanguage === 'mr'" (click)="toggleLanguage('mr')">
+                मराठी
+            </button>
+        </div>
+
         <div class="divider"></div>
 
         <button (click)="startNewDesign()" class="btn-outline">New Design</button>
-        <button (click)="saveProject()" class="btn-primary-outline">
-            <span class="material-symbols-outlined" style="font-size: 20px;">save</span>
-            Save
-        </button>
+        <div class="dropdown-wrapper">
+            <button (click)="toggleMenu('save')" class="btn-primary-outline" [class.active]="activeMenu === 'save'"
+                style="padding-right: 8px;">
+                <span class="material-symbols-outlined" style="font-size: 20px;">save</span>
+                Save
+                <span class="material-symbols-outlined arrow"
+                    style="font-size: 18px; margin-left: 4px;">expand_more</span>
+            </button>
+            <div class="dropdown-menu" *ngIf="activeMenu === 'save'"
+                style="right: 0; left: auto; top: 100%; margin-top: 8px; min-width: 200px;">
+                <button (click)="saveProject()" class="menu-item">
+                    <span class="material-symbols-outlined">save_as</span> Save Project
+                </button>
+                <div class="divider" style="height: 1px; background: #e5e7eb; margin: 4px 0; width: 100%;"></div>
+                <button (click)="saveAsTemplate()" class="menu-item">
+                    <span class="material-symbols-outlined">grid_view</span> Save as Template
+                </button>
+                <button (click)="saveAsDesign()" class="menu-item">
+                    <span class="material-symbols-outlined">design_services</span> Save as Design
+                </button>
+                <button (click)="saveAsBackground()" class="menu-item">
+                    <span class="material-symbols-outlined">wallpaper</span> Save as Background
+                </button>
+            </div>
+        </div>
         <button (click)="downloadPNG()" class="btn-primary">
             <span class="material-symbols-outlined" style="font-size: 20px;">download</span>
             Download

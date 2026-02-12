@@ -88,9 +88,12 @@ export class ImageStorageService {
     async getImage(id: string): Promise<Blob | null> {
         try {
             const db = await this.dbPromise;
+            // Determine the correct store based on ID prefix
+            const targetStore = id.startsWith('cutout_') ? 'cutouts' : this.storeName;
+
             return new Promise((resolve, reject) => {
-                const transaction = db.transaction(this.storeName, 'readonly');
-                const store = transaction.objectStore(this.storeName);
+                const transaction = db.transaction(targetStore, 'readonly');
+                const store = transaction.objectStore(targetStore);
                 const request = store.get(id);
 
                 request.onsuccess = () => {

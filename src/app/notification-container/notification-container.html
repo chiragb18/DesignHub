@@ -1,0 +1,39 @@
+<!-- Toast Container -->
+<div class="toast-container">
+    @for (toast of notificationService.toasts(); track toast.id) {
+    <div class="toast-item" [ngClass]="toast.type">
+        <div class="toast-icon">
+            @if (toast.type === 'success') { <span class="material-symbols-outlined">check_circle</span> }
+            @else if (toast.type === 'error') { <span class="material-symbols-outlined">error</span> }
+            @else if (toast.type === 'warning') { <span class="material-symbols-outlined">warning</span> }
+            @else { <span class="material-symbols-outlined">info</span> }
+        </div>
+        <div class="toast-content">{{ toast.message }}</div>
+        <button class="toast-close" (click)="notificationService.removeToast(toast.id)">
+            <span class="material-symbols-outlined">close</span>
+        </button>
+    </div>
+    }
+</div>
+
+<!-- Modal Container -->
+<div class="modal-overlay" *ngIf="notificationService.activeModal() as modal" (click)="onCancel()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+            <h3>{{ modal.title }}</h3>
+            <button class="close-btn" (click)="onCancel()">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>{{ modal.message }}</p>
+            <div class="input-wrapper" *ngIf="modal.showInput">
+                <input type="text" [(ngModel)]="modal.inputValue" (keydown.enter)="onConfirm()" autofocus>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" (click)="onCancel()">{{ modal.cancelText || 'Cancel' }}</button>
+            <button class="btn-primary" (click)="onConfirm()">{{ modal.confirmText || 'Confirm' }}</button>
+        </div>
+    </div>
+</div>

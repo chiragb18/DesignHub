@@ -117,39 +117,4 @@
             </div>
         </section>
     </div>
-
-    <!-- Toast -->
-    <div class="save-feedback" *ngIf="showSaveSuccess()">
-        <span class="material-symbols-outlined">check_circle</span>
-        <span>Saved Successfully!</span>
-    </div>
-
-    <!-- SAVE TEMPLATE MODAL -->
-    <div class="modal-overlay" *ngIf="isSaveModalOpen">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h3>Save as {{ saveCategory }}</h3>
-                <button class="close-btn" (click)="closeSaveModal()">
-                    <span class="material-symbols-outlined">close</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="input-group">
-                    <label>Name</label>
-                    <input type="text" [(ngModel)]="templateNameInput" [placeholder]="'My new ' + saveCategory"
-                        autofocus>
-                </div>
-                <div class="category-indicator">
-                    <span class="material-symbols-outlined">category</span>
-                    <p>This will be saved in your <strong>{{ saveCategory }}s</strong> collection.</p>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel" (click)="closeSaveModal()">Cancel</button>
-                <button class="btn-save" (click)="confirmSaveTemplate()" [disabled]="!templateNameInput.trim()">
-                    Save to Collection
-                </button>
-            </div>
-        </div>
-    </div>
 </div>

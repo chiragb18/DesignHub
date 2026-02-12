@@ -2,7 +2,9 @@ import { Injectable, signal, inject } from '@angular/core';
 import * as fabric from 'fabric';
 import { TransliterationService } from './transliteration.service';
 import { ImageStorageService } from './image-storage.service';
-import { removeBackground, Config } from '@imgly/background-removal';
+import { PersistenceService } from './persistence.service';
+import type { Config } from '@imgly/background-removal';
+import { NotificationService } from './notification.service';
 
 export interface SavedProject {
     id: string;
@@ -39,6 +41,7 @@ export class BannerService {
     private history: string[] = [];
     private historyStep: number = -1;
     private isHistoryLoading: boolean = false;
+    private rbFunctionCache: any = null;
 
     // State signals
     public selectedObject = signal<fabric.Object | null>(null);
@@ -66,6 +69,7 @@ export class BannerService {
     public isRemovingBg = signal(false);
     public cutouts = signal<Cutout[]>([]);
     public bgRemovalProgress = signal(0);
+    public bgRemovalStatus = signal<string>('Preparing...');
     public typingLanguage = signal<'en' | 'mr'>('en');
     public isSaving = signal(false);
     public isProjectLoading = signal(false);
@@ -77,15 +81,26 @@ export class BannerService {
     private cropTarget: fabric.Image | null = null;
     private highlightOutline: fabric.Rect | null = null;
 
-    // Track blob URLs to prevent garbage collection
+    // Track blob URLs to prevent memory leaks
     private activeBlobUrls: string[] = [];
+
+    // Props to include in JSON serialization
+    private readonly SERIALIZE_PROPS = [
+        'curvature', 'imageCurvature', 'isCurvedGroup', 'id', 'name',
+        'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip',
+        'idbId', 'originalSrc', 'isBgRemoved', 'excludeFromExport',
+        'opacity', 'visible', 'selectable', 'evented', 'lockMovementX', 'lockMovementY',
+        'cropX', 'cropY', 'filters', 'clipPath'
+    ];
 
     private imageStorage = inject(ImageStorageService);
     private translitService = inject(TransliterationService);
+    private persistenceService = inject(PersistenceService);
+    private notificationService = inject(NotificationService);
 
     constructor() { }
 
-    initCanvas(canvasId: string): void {
+    async initCanvas(canvasId: string): Promise<void> {
         this.canvas = new fabric.Canvas(canvasId, {
             width: 1200,
             height: 675,
@@ -103,8 +118,20 @@ export class BannerService {
         this.initSavedTemplates();
         this.initCutouts();
 
-        // Try loading autosave; if none, it remains blank
-        this.loadAutosave();
+        // LOGIC FOR "FRESH RUN" VS "REFRESH"
+        // 1. Fresh Project Run (New tab/session) -> Starts with white canvas
+        // 2. Page Refresh (Same tab/session) -> Restore "till now" work
+        const isRefresh = typeof window !== 'undefined' && !!window.sessionStorage.getItem('banner_session_active');
+
+        if (isRefresh) {
+            console.log('[BannerService] Page refreshed: Restoring recently work...');
+            await this.loadAutosave();
+        } else {
+            console.log('[BannerService] Fresh project load: Starting with white background');
+            if (typeof window !== 'undefined') {
+                window.sessionStorage.setItem('banner_session_active', 'true');
+            }
+        }
 
         this.refreshState();
         this.saveState();
@@ -342,43 +369,69 @@ export class BannerService {
 
     private applyTransliteration(obj: fabric.Textbox): void {
         const text = obj.text || '';
-        const cursor = obj.selectionStart || 0;
+        const selectionStart = obj.selectionStart || 0;
+        const selectionEnd = obj.selectionEnd || 0;
 
-        // Strategy: Match the English word ending at the cursor
-        const textBeforeCursor = text.substring(0, cursor);
-        const match = textBeforeCursor.match(/[A-Za-z]+$/);
+        // Only process if it's a simple cursor (no selection range) and not at startup
+        if (selectionStart !== selectionEnd || selectionStart === 0) return;
 
-        if (match) {
-            const word = match[0];
-            const transliterated = this.translitService.phoneticMarathi(word);
+        const textBeforeCursor = text.substring(0, selectionStart);
 
-            if (transliterated !== word) {
-                const newTextBefore = textBeforeCursor.substring(0, textBeforeCursor.length - word.length) + transliterated;
-                const newFullText = newTextBefore + text.substring(cursor);
+        // 1. Determine the cluster to transliterate
+        // We match ONLY the cluster of alphanumeric characters or special phonetic markers 
+        // that is IMMEDIATELY before the cursor. This stops at spaces, punctuation, etc.
+        const clusterMatch = textBeforeCursor.match(/([\u0900-\u097FA-Za-z0-9'_\^]+)$/);
 
-                (obj as any)._isTransliterating = true;
-                obj.set('text', newFullText);
+        if (clusterMatch) {
+            const currentWord = clusterMatch[1];
+            const wordStart = selectionStart - currentWord.length;
 
-                // Set cursor to end of transliterated part
-                const newCursor = newTextBefore.length;
-                obj.setSelectionStart(newCursor);
-                obj.setSelectionEnd(newCursor);
+            // 2. Only process if the cluster contains at least one English character
+            if (!/[A-Za-z]/.test(currentWord)) {
+                return;
+            }
 
-                this.canvas.renderAll();
+            try {
+                // If it contains Marathi characters, convert everything to ITRANS first to allow phonetic editing
+                const isMixed = /[\u0900-\u097F]/.test(currentWord);
+                const itransWord = isMixed ? this.translitService.toItrans(currentWord) : currentWord;
+                const transliterated = this.translitService.phoneticMarathi(itransWord);
+
+                if (transliterated && transliterated !== currentWord) {
+                    // Build the new text by replacing ONLY the current cluster
+                    const newText = text.substring(0, wordStart) + transliterated + text.substring(selectionStart);
+
+                    // Lock events during text replacement
+                    (obj as any)._isTransliterating = true;
+                    obj.set('text', newText);
+
+                    // Maintain cursor position exactly after the transliterated word
+                    const newCursor = wordStart + transliterated.length;
+                    obj.setSelectionStart(newCursor);
+                    obj.setSelectionEnd(newCursor);
+
+                    // Ensure Devanagari font is applied
+                    if (obj.get('fontFamily') !== 'Noto Sans Devanagari, sans-serif') {
+                        obj.set('fontFamily', 'Noto Sans Devanagari, sans-serif');
+                    }
+
+                    this.canvas.requestRenderAll();
+
+                    // Release lock after a short delay to allow Fabric internals to catch up
+                    setTimeout(() => {
+                        (obj as any)._isTransliterating = false;
+                    }, 50);
+                }
+            } catch (err) {
+                console.error('[Transliteration] Processing failed:', err);
                 (obj as any)._isTransliterating = false;
             }
         }
     }
 
-    private isPhoneticChar(char: string): boolean {
-        if (!char) return false;
-        if (/[A-Za-z']/.test(char)) return true;
-        const code = char.charCodeAt(0);
-        return (code >= 0x0900 && code <= 0x097F);
-    }
-
     private setInitialGradient(): void {
         this.canvas.backgroundColor = '#ffffff'; // White default
+        this.canvasColor.set('#ffffff'); // Sync UI signal
         this.bgType.set('solid');
     }
 
@@ -409,35 +462,49 @@ export class BannerService {
 
     // private saveState(): void { // Old implementation removed for autosave version }
 
-    undo(): void {
+    async undo(): Promise<void> {
         if (this.historyStep > 0) {
+            clearTimeout(this.timeoutId);
             this.isHistoryLoading = true;
             this.historyStep--;
-            const state = this.history[this.historyStep];
-            this.canvas.loadFromJSON(state).then(() => {
+            const stateJson = this.history[this.historyStep];
+            try {
+                let state = JSON.parse(stateJson);
+                state = this.strictSanitize(state);
+                // Ensure state is restored from IDB if it contains indexeddb refs
+                await this.restoreImagesFromStorage(state);
+
+                await this.canvas.loadFromJSON(state);
                 this.canvas.renderAll();
                 this.refreshState();
                 this.isHistoryLoading = false;
-            }).catch(err => {
+            } catch (err) {
                 console.error('Undo failed', err);
                 this.isHistoryLoading = false;
-            });
+            }
         }
     }
 
-    redo(): void {
+    async redo(): Promise<void> {
         if (this.historyStep < this.history.length - 1) {
+            clearTimeout(this.timeoutId);
             this.isHistoryLoading = true;
             this.historyStep++;
-            const state = this.history[this.historyStep];
-            this.canvas.loadFromJSON(state).then(() => {
+            const stateJson = this.history[this.historyStep];
+            try {
+                let state = JSON.parse(stateJson);
+                state = this.strictSanitize(state);
+                // Ensure state is restored from IDB if it contains indexeddb refs
+                await this.restoreImagesFromStorage(state);
+
+                await this.canvas.loadFromJSON(state);
                 this.canvas.renderAll();
                 this.refreshState();
                 this.isHistoryLoading = false;
-            }).catch(err => {
+            } catch (err) {
                 console.error('Redo failed', err);
                 this.isHistoryLoading = false;
-            });
+            }
         }
     }
 
@@ -448,20 +515,26 @@ export class BannerService {
         this.saveState();
     }
 
-    addText(text: string = 'New Text', options: any = {}): void {
-        const textbox = new fabric.Textbox(text, {
+    addText(text?: string, options: any = {}): void {
+        const isMarathi = this.typingLanguage() === 'mr';
+        const defaultText = text || (isMarathi ? 'येथे मजकूर लिहा' : 'Your Story Starts Here');
+
+        const textbox = new fabric.Textbox(defaultText, {
             left: 100,
             top: 100,
-            width: 200,
-            fontSize: 32,
-            fill: '#7c3aed',
-            fontFamily: 'Inter',
+            width: 400,
+            fontSize: 48,
+            fill: '#1e293b',
+            fontFamily: isMarathi ? 'Noto Sans Devanagari, sans-serif' : 'Inter, sans-serif',
+            textAlign: 'center',
             ...options
         });
+
         this.canvas.add(textbox);
         this.canvas.centerObject(textbox);
         this.canvas.setActiveObject(textbox);
         this.canvas.renderAll();
+        this.saveState();
     }
 
     addShape(type: string): void {
@@ -544,20 +617,55 @@ export class BannerService {
         this.saveState();
     }
 
-    addImage(url: string): void {
-        const imgObj = new Image();
-        imgObj.src = url;
-        imgObj.crossOrigin = 'anonymous'; // Critical for external images to not taint canvas
+    async addImage(source: string | Blob): Promise<void> {
+        try {
+            let blob: Blob;
+            if (typeof source === 'string') {
+                if (source.startsWith('data:')) {
+                    blob = this.dataURLtoBlob(source);
+                } else if (source.startsWith('http')) {
+                    const response = await fetch(source);
+                    blob = await response.blob();
+                } else {
+                    return; // Invalid source
+                }
+            } else {
+                blob = source;
+            }
 
-        imgObj.onload = () => {
-            const img = new fabric.Image(imgObj);
-            const canvasW = this.canvas.width || 1200;
-            const scale = Math.min(300 / (img.width || 1), 1);
-            img.scale(scale);
-            this.canvas.add(img);
-            this.canvas.centerObject(img);
-            this.canvas.setActiveObject(img);
-            this.canvas.renderAll();
+            // 1. Persist to IDB immediately (Original ImageStorageService)
+            const idbId = await this.imageStorage.saveImage(blob);
+
+            // 2. Persist to new professional storage (PersistenceService)
+            // Use the hash-based ID for consistency
+            await this.persistenceService.saveImage(idbId, blob);
+
+            // 3. Create high-performance Object URL for canvas
+            const objectUrl = this.persistenceService.createObjectURL(blob);
+            this.activeBlobUrls.push(objectUrl);
+
+            const imgObj = new Image();
+            imgObj.src = objectUrl;
+            imgObj.crossOrigin = 'anonymous';
+
+            imgObj.onload = () => {
+                const img = new fabric.Image(imgObj);
+                (img as any).idbId = idbId;
+
+                // Track original source immediately for future "restore original" or high-res export
+                (img as any).originalSrc = `indexeddb://${idbId}`;
+
+                const scale = Math.min(300 / (img.width || 1), 1);
+                img.scale(scale);
+                this.canvas.add(img);
+                this.canvas.centerObject(img);
+                this.canvas.setActiveObject(img);
+                this.canvas.renderAll();
+                this.saveState(); // Save state after adding
+            };
+        } catch (e) {
+            console.error('Failed to add image:', e);
+            this.notificationService.error('Failed to add image');
         }
     }
 
@@ -587,22 +695,55 @@ export class BannerService {
     private async offloadObjectImage(obj: any) {
         if (!obj) return;
 
-        // 1. Handle Images
-        if (obj.type === 'image' && obj.src) {
-            obj.src = await this.offloadUrl(obj.src);
+        // 0. Priority: If it has an IDB ID, synchronize the main source to point to IndexedDB
+        if (obj.idbId) {
+            console.log(`[Persistence] Syncing IDB ref: ${obj.idbId} for ${obj.type}`);
+            if (obj.src !== undefined) obj.src = `indexeddb://${obj.idbId}`;
+            // CRITICAL FIX: Do NOT overwrite originalSrc/originalImageSrc with the current idbId.
+            // The object might be a derivative (e.g. bg-removed) where idbId is the cutout, 
+            // but originalSrc must point to the separate original file.
+            // The loop below will handle offloading originalSrc correctly if it's a URL.
         }
 
-        // 2. Handle Patterns in fill or stroke (Critical for backgrounds & shapes)
-        for (const prop of ['fill', 'stroke']) {
-            const val = obj[prop];
-            if (val && typeof val === 'object' && val.type === 'pattern' && val.source) {
-                if (typeof val.source === 'string') {
-                    val.source = await this.offloadUrl(val.source);
+        // 1. Handle primary source properties for offloading
+        for (const key of ['src', 'originalSrc', 'originalImageSrc']) {
+            if (obj[key] && typeof obj[key] === 'string' && !obj[key].startsWith('indexeddb://')) {
+                const offloaded = await this.offloadUrl(obj[key]);
+                obj[key] = offloaded;
+                // Capture the ID if we just offloaded a new URL
+                if (offloaded.startsWith('indexeddb://') && !obj.idbId) {
+                    obj.idbId = offloaded.replace('indexeddb://', '');
                 }
             }
         }
 
-        // 3. Recursively handle groups
+        // 2. Handle Patterns in fill or stroke
+        for (const prop of ['fill', 'stroke']) {
+            const val = obj[prop];
+            if (val && typeof val === 'object' && val.type === 'pattern' && val.source) {
+                let sourceUrl = '';
+                if (typeof val.source === 'string') {
+                    sourceUrl = val.source;
+                } else if (val.source instanceof HTMLImageElement) {
+                    sourceUrl = val.source.src;
+                }
+
+                if (sourceUrl && !sourceUrl.startsWith('indexeddb://')) {
+                    const offloaded = await this.offloadUrl(sourceUrl);
+                    val.source = offloaded;
+                    if (offloaded.startsWith('indexeddb://')) {
+                        val.idbId = offloaded.replace('indexeddb://', '');
+                    }
+                }
+            }
+        }
+
+        // 3. Handle ClipPath
+        if (obj.clipPath) {
+            await this.offloadObjectImage(obj.clipPath);
+        }
+
+        // 4. Recursively handle groups
         if (obj.objects) {
             for (const child of obj.objects) {
                 await this.offloadObjectImage(child);
@@ -613,30 +754,49 @@ export class BannerService {
     private async offloadUrl(url: string): Promise<string> {
         if (!url || typeof url !== 'string' || url.startsWith('indexeddb://')) return url;
 
+        // Skip small SVGs or placeholder strings if any
+        if (url.length < 50 && !url.startsWith('blob:')) return url;
+
         if (url.startsWith('data:')) {
             try {
                 const blob = this.dataURLtoBlob(url);
                 const id = await this.imageStorage.saveImage(blob);
+                // Also mirror to PersistenceService for redundancy
+                await this.persistenceService.saveImage(id, blob);
+                console.log('Offloaded DataURL to IDB:', id);
                 return `indexeddb://${id}`;
             } catch (e) {
                 console.error('Failed to offload data-url', e);
                 return url;
             }
-        } else if (url.startsWith('blob:')) {
-            let blob: Blob | null = null;
+        } else if (url.startsWith('blob:') || (url.startsWith('http') && !url.includes(location.host))) {
             try {
-                const response = await fetch(url);
-                blob = await response.blob();
+                const response = await fetch(url, { mode: 'no-cors' }); // Attempt no-cors if standard fails
+                let blob: Blob;
+
+                try {
+                    const corsResponse = await fetch(url);
+                    if (!corsResponse.ok) throw new Error('CORS fetch failed');
+                    blob = await corsResponse.blob();
+                } catch (corsErr) {
+                    console.warn('CORS fetch failed, attempting canvas capture fallback for offload');
+                    // If fetch fails, the last resort is a canvas capture if it's already rendered
+                    // For now, we return the URL if it's http, but if it's blob, it MUST be squashed if we can't fetch it
+                    if (url.startsWith('http')) return url;
+                    throw new Error('Could not fetch blob source');
+                }
+
                 const id = await this.imageStorage.saveImage(blob);
+                await this.persistenceService.saveImage(id, blob);
+                console.log(`Offloaded URL to IDB:`, id);
                 return `indexeddb://${id}`;
             } catch (e) {
-                console.error('Failed to offload blobUrl, attempting fallback...', e);
-                if (blob) {
-                    try {
-                        return await this.blobToDataURL(blob);
-                    } catch (e2) { }
+                console.error('Failed to offload URL', url, e);
+                if (url.startsWith('blob:')) {
+                    console.warn('⚠️ OFF-LOAD FAILED: Keeping original blob URL to prevent immediate data loss', url);
+                    return url;
                 }
-                return url;
+                return url; // Keep http URL as is
             }
         }
         return url;
@@ -669,15 +829,18 @@ export class BannerService {
         this.canvas.requestRenderAll();
 
         // 2. Prepare JSON with externalized images
-        const customProps = ['curvature', 'imageCurvature', 'isCurvedGroup', 'id', 'name', 'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip'];
-        const json = this.canvas.toObject(customProps);
+        // CRITICAL: Create a DEEP COPY to avoid modifying live canvas objects
+        const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
+        const json = JSON.parse(JSON.stringify(rawJson)); // Deep clone
+
         // Save dimensions to ensure accurate restore
         (json as any).width = this.canvas.width;
         (json as any).height = this.canvas.height;
 
+        // Process the COPY, not the original canvas data
         await this.processImagesForStorage(json);
 
-        // 3. Generate clean thumbnail
+        // 3. Generate clean thumbnail BEFORE any modifications
         const thumbnail = this.canvas.toDataURL({
             format: 'jpeg',
             multiplier: 0.2,
@@ -685,30 +848,33 @@ export class BannerService {
             enableRetinaScaling: false
         });
 
-        // Get all templates from storage to check for existing
+        // 4. Persistence Architecture: Shadow Storage
+        // We store the heavy JSON in a dedicated record (designs store) 
+        // and keep only metadata in the listing.
         const allSaved = await this.imageStorage.getTemplates();
         const activeId = this.activeTemplateId();
         const existingIndex = allSaved.findIndex(t => t.id === activeId && t.isCustom);
 
         let updatedTemplates: Template[];
+        let targetId: string;
 
         if (existingIndex !== -1 && activeId && allSaved[existingIndex].name === name) {
-            // UPDATE existing
+            targetId = activeId;
             updatedTemplates = [...allSaved];
             updatedTemplates[existingIndex] = {
                 ...updatedTemplates[existingIndex],
-                json,
+                json: null, // Wipe JSON from listing to save space
                 thumbnail,
                 category,
-                date: new Date() // Ensure date is updated to show as recent
+                date: new Date()
             };
         } else {
-            // CREATE new
+            targetId = Date.now().toString();
             const newTemplate: Template = {
-                id: Date.now().toString(),
+                id: targetId,
                 name,
                 category,
-                json,
+                json: null, // Wipe JSON from listing
                 thumbnail,
                 isCustom: true,
                 date: new Date()
@@ -716,19 +882,17 @@ export class BannerService {
             updatedTemplates = [...allSaved, newTemplate];
         }
 
-        // Final Safety Check: Ensure NO "blob:" URLs persist in the JSON.
-        // If offloading failed for any reason, a "blob:" URL is a time bomb.
-        updatedTemplates.forEach(t => {
-            const str = JSON.stringify(t.json);
-            if (str.includes('"blob:')) {
-                console.warn('⚠️ Found residual blob URLs in template, sanitizing...');
-                // Replace blob URLs with empty string to prevent load crashes
-                const sanitized = str.replace(/"blob:[^"]+"/g, '""');
-                t.json = JSON.parse(sanitized); // Note: this reparses the JSON structure
-            }
-        });
+        // 5. Save the actual payload to the professional shadow store
+        console.log(`[Save Template] Saving design data to shadow storage with ID: ${targetId}`);
+        await this.persistenceService.saveDesign(targetId, json);
+        console.log(`[Save Template] ✅ Shadow storage save complete for ID: ${targetId}`);
 
+        // REMOVED destructive sanitization that was causing items to disappear if offload lagged
+        // If an image stays as blob:, it's better than becoming "" (invisible)
+
+        console.log(`[Save Template] Saving metadata listing with ${updatedTemplates.length} templates`);
         if (await this.saveTemplatesToStorage(updatedTemplates)) {
+            console.log('[Save Template] ✅ Metadata listing saved successfully');
             // Reload all signals to keep UI in sync
             await this.initSavedTemplates();
 
@@ -736,9 +900,13 @@ export class BannerService {
             if (existingIndex === -1) {
                 const newId = updatedTemplates[updatedTemplates.length - 1].id;
                 this.activeTemplateId.set(newId);
+                console.log(`[Save Template] Set active template ID to: ${newId}`);
             }
+
+            this.notificationService.success(`Template "${name}" saved successfully!`);
             return true;
         }
+        console.error('[Save Template] ❌ Failed to save metadata listing');
         return false;
     }
 
@@ -756,7 +924,7 @@ export class BannerService {
             return true;
         } catch (e: any) {
             console.error('Failed to save templates', e);
-            alert('Failed to save template: ' + e.message);
+            this.notificationService.error('Failed to save template: ' + e.message);
             return false;
         }
     }
@@ -804,85 +972,94 @@ export class BannerService {
     async removeBackground(): Promise<void> {
         const activeObject = this.canvas.getActiveObject();
         if (!activeObject || activeObject.type !== 'image') {
-            alert('Please select an image first');
+            this.notificationService.warning('Please select an image first');
             return;
         }
 
         const originalImg = activeObject as fabric.Image;
-        const originalSrc = (originalImg as any)._element?.src || (originalImg as any).src;
+        const imgElement = (originalImg as any)._element || (originalImg as any).getElement?.();
+        const originalSrc = (originalImg as any).src || imgElement?.src;
 
-        if (!originalSrc) return;
+        if (!originalSrc && !imgElement) {
+            this.notificationService.error('Could not identify image source');
+            return;
+        }
 
         try {
             this.isRemovingBg.set(true);
             this.bgRemovalProgress.set(0);
+            this.bgRemovalStatus.set('Loading AI engine...');
 
-            let processingSource: string | Blob = originalSrc;
+            // 1. OPTIMIZED CACHING: Only import the module once to save initialization time
+            if (!this.rbFunctionCache) {
+                this.bgRemovalStatus.set('Initializing AI engine...');
+                const imglyModule = await import('@imgly/background-removal');
+                this.rbFunctionCache = imglyModule.removeBackground || (imglyModule as any).default?.removeBackground || (imglyModule as any).default;
+            }
+            const rbFunction = this.rbFunctionCache;
 
-            // Try to get data URL for better reliability, but fallback to original if it fails (CORS)
-            try {
-                const tempCanvas = document.createElement('canvas');
-                const imgElement = (originalImg as any)._element as HTMLImageElement;
-                tempCanvas.width = imgElement.naturalWidth || imgElement.width;
-                tempCanvas.height = imgElement.naturalHeight || imgElement.height;
-                const ctx = tempCanvas.getContext('2d');
-                if (ctx) {
-                    ctx.drawImage(imgElement, 0, 0);
-                    processingSource = tempCanvas.toDataURL('image/png');
-                }
-            } catch (e) {
-                console.warn('Could not create DataURL (likely CORS), falling back to original source URL', e);
+            if (typeof rbFunction !== 'function') {
+                throw new Error('Background removal function not found in loaded module.');
             }
 
+            // 2. STABLE & FAST CONFIG
             const config: Config = {
                 progress: (key, current, total) => {
                     const percent = Math.round((current / total) * 100);
                     this.bgRemovalProgress.set(percent);
+
+                    if (key.includes('fetch')) {
+                        this.bgRemovalStatus.set(`Downloading Model... ${percent}%`);
+                    } else if (key.includes('compute')) {
+                        this.bgRemovalStatus.set(`Analyzing... ${percent}%`);
+                    } else {
+                        this.bgRemovalStatus.set(`Processing... ${percent}%`);
+                    }
                 },
-                model: 'isnet',
+                // Use 'isnet_fp16' for ~2x speedup. It's half the size (40MB vs 80MB) 
+                // and optimized for modern GPUs while maintaining high accuracy.
+                model: 'isnet_fp16',
                 output: {
                     format: 'image/png',
                     quality: 0.8
-                }
+                },
+                // Keep proxyToWorker false if COOP/COEP isolation is not configured,
+                // but setting resolution explicitly can sometimes speed up processing.
+                proxyToWorker: false
             };
 
-            // @imgly/background-removal works offline with WASM
-            const resultBlob = await removeBackground(processingSource, config);
+            // 3. EXECUTE REMOVAL
+            // Pass the source URL/Blob directly for best reliability
+            const resultBlob = await rbFunction(originalSrc || imgElement, config);
 
-            // Create URL for the transparent result
             const resultUrl = URL.createObjectURL(resultBlob);
-
-            // Load onto canvas
             const imgObj = new Image();
             imgObj.src = resultUrl;
 
             imgObj.onload = async () => {
-                // Store the original src so we can "restore" later if needed
                 const newImg = new fabric.Image(imgObj);
 
-                // Copy properties
-                newImg.set({
-                    left: originalImg.left,
-                    top: originalImg.top,
-                    scaleX: originalImg.scaleX,
-                    scaleY: originalImg.scaleY,
-                    angle: originalImg.angle,
-                    originX: originalImg.originX,
-                    originY: originalImg.originY,
-                    flipX: originalImg.flipX,
-                    flipY: originalImg.flipY,
-                    opacity: originalImg.opacity,
-                    skewX: (originalImg as any).skewX,
-                    skewY: (originalImg as any).skewY
+                // Copy properties accurately
+                const props = [
+                    'left', 'top', 'scaleX', 'scaleY', 'angle',
+                    'originX', 'originY', 'flipX', 'flipY',
+                    'opacity', 'skewX', 'skewY'
+                ];
+
+                props.forEach(p => {
+                    if ((originalImg as any)[p] !== undefined) {
+                        (newImg as any)[p] = (originalImg as any)[p];
+                    }
                 });
 
-                // Attach metadata for "re-edit/restore" requirement
-                (newImg as any).originalSrc = originalSrc;
+                const persistentSrc = (originalImg as any).idbId ? `indexeddb://${(originalImg as any).idbId}` : originalSrc;
+                (newImg as any).originalSrc = persistentSrc;
                 (newImg as any).isBgRemoved = true;
 
                 const index = this.canvas.getObjects().indexOf(originalImg);
                 this.canvas.remove(originalImg);
                 this.canvas.add(newImg);
+
                 if (index !== -1) {
                     this.canvas.moveObjectTo(newImg, index);
                 }
@@ -890,17 +1067,24 @@ export class BannerService {
                 this.canvas.setActiveObject(newImg);
                 this.canvas.renderAll();
 
-                // Save to IndexedDB
-                await this.saveAsCutout(resultBlob, 'AI Cutout ' + new Date().toLocaleTimeString());
+                const cutoutId = await this.saveAsCutout(resultBlob, 'AI Cutout ' + new Date().toLocaleTimeString());
+                (newImg as any).idbId = cutoutId;
 
                 this.isRemovingBg.set(false);
                 this.saveState();
-                URL.revokeObjectURL(resultUrl);
+                this.activeBlobUrls.push(resultUrl);
+                this.notificationService.success('Done! Clear vision achieved.');
             };
 
         } catch (error: any) {
-            console.error('Offline Background Removal Error:', error);
-            alert('AI Removal Failed: ' + error.message);
+            console.error('Final Background Removal Error:', error);
+            let errMsg = error.message || 'Unknown processing error';
+
+            if (errMsg.includes('Symbol.iterator') || errMsg.includes('iterable')) {
+                errMsg = 'Model initialization failed. Please check if COOP/COEP headers are needed or refresh the page.';
+            }
+
+            this.notificationService.error('AI Error: ' + errMsg);
             this.isRemovingBg.set(false);
         }
     }
@@ -908,51 +1092,71 @@ export class BannerService {
     async restoreOriginalImage(): Promise<void> {
         const activeObject = this.canvas.getActiveObject();
         if (!activeObject || !(activeObject as any).originalSrc) {
-            alert('No original image found to restore');
+            this.notificationService.warning('No original image found to restore');
             return;
         }
 
         const currentImg = activeObject as fabric.Image;
-        const originalSrc = (currentImg as any).originalSrc;
+        const rawOriginalSrc = (currentImg as any).originalSrc;
 
-        const imgObj = new Image();
-        imgObj.src = originalSrc;
-        imgObj.onload = () => {
-            const restoredImg = new fabric.Image(imgObj);
-            restoredImg.set({
-                left: currentImg.left,
-                top: currentImg.top,
-                scaleX: currentImg.scaleX,
-                scaleY: currentImg.scaleY,
-                angle: currentImg.angle,
-                originX: currentImg.originX,
-                originY: currentImg.originY
-            });
+        try {
+            // Resolving originalSrc from IDB if needed
+            const originalSrc = await this.restoreUrl(rawOriginalSrc);
 
-            this.canvas.remove(currentImg);
-            this.canvas.add(restoredImg);
-            this.canvas.setActiveObject(restoredImg);
-            this.canvas.renderAll();
-            this.saveState();
-        };
+            const imgObj = new Image();
+            imgObj.src = originalSrc;
+            imgObj.crossOrigin = 'anonymous';
+
+            imgObj.onload = () => {
+                const restoredImg = new fabric.Image(imgObj);
+                restoredImg.set({
+                    left: currentImg.left,
+                    top: currentImg.top,
+                    scaleX: currentImg.scaleX,
+                    scaleY: currentImg.scaleY,
+                    angle: currentImg.angle,
+                    originX: currentImg.originX,
+                    originY: currentImg.originY,
+                    clipPath: currentImg.clipPath, // Keep mask if any
+                    // Preserve IDB link if the original source itself was from IDB
+                    idbId: rawOriginalSrc.startsWith('indexeddb://') ? rawOriginalSrc.replace('indexeddb://', '') : (currentImg as any).idbId
+                });
+
+                this.canvas.add(restoredImg);
+                this.canvas.remove(currentImg);
+                this.canvas.setActiveObject(restoredImg);
+                this.canvas.renderAll();
+                this.saveState();
+                this.notificationService.success('Original source restored');
+            };
+        } catch (e) {
+            console.error('Failed to restore original', e);
+            this.notificationService.error('Failed to restore original image');
+        }
     }
 
-    async saveAsCutout(blob: Blob, name: string): Promise<void> {
+    async saveAsCutout(blob: Blob, name: string): Promise<string> {
         try {
-            await this.imageStorage.saveCutout(blob, name);
+            const id = await this.imageStorage.saveCutout(blob, name);
             await this.initCutouts(); // Refresh the list
+            return id;
         } catch (e) {
             console.error('Failed to save cutout', e);
+            return '';
         }
     }
 
     async addCutoutToCanvas(cutout: Cutout): Promise<void> {
         const url = URL.createObjectURL(cutout.blob);
+        this.activeBlobUrls.push(url);
+
         const imgObj = new Image();
         imgObj.src = url;
 
         imgObj.onload = () => {
             const img = new fabric.Image(imgObj);
+            (img as any).idbId = cutout.id; // Store ID for persistence
+
             const scale = Math.min(400 / (img.width || 1), 1);
             img.scale(scale);
 
@@ -961,8 +1165,7 @@ export class BannerService {
             this.canvas.setActiveObject(img);
             this.canvas.renderAll();
             this.saveState();
-
-            URL.revokeObjectURL(url);
+            // Don't revoke here, we need it for canvas rendering and potential saving
         };
     }
 
@@ -992,42 +1195,45 @@ export class BannerService {
     }
 
     async loadTemplate(templateJson: any): Promise<void> {
+        // 0. Cancel any pending save operations to prevent race conditions
+        clearTimeout(this.timeoutId);
+
         try {
-            console.log('Loading template...', templateJson);
             this.isHistoryLoading = true;
-            this.canvas.discardActiveObject();
+            this.isProjectLoading.set(true);
+            this.cleanupBlobUrls();
 
-            // If it's a string, parse it; otherwise use as object
-            let data;
-            if (typeof templateJson === 'string') {
-                try {
-                    data = JSON.parse(templateJson);
-                } catch (e) {
-                    console.error('Failed to parse template JSON string:', e);
-                    throw new Error('Invalid template JSON format');
-                }
-            } else if (typeof templateJson === 'object' && templateJson !== null) {
-                // Deep clone to avoid reference issues
-                data = JSON.parse(JSON.stringify(templateJson));
-            } else {
-                throw new Error('Template data must be a string or object');
+            let data = templateJson;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (e) { console.error('Malformed template JSON string'); return; }
             }
 
-            console.log('Parsed template data:', data);
-
-            // CRITICAL FIX: Brute-force sanitize any remaining blob: URLs to prevent Fabric crash
-            // This catches deep properties that recursive search might miss or fail to clear
-            try {
-                const jsonStr = JSON.stringify(data);
-                if (jsonStr.includes('blob:')) {
-                    console.warn('🧹 Sanitizing blob URLs from template JSON...');
-                    // Replace "blob:..." with "" (empty string)
-                    const sanitized = jsonStr.replace(/"blob:[^"]+"/g, '""');
-                    data = JSON.parse(sanitized);
+            // 1. Shadow Retrieval Link: If input is a metadata object, fetch full payload
+            if (data && data.id && !data.objects && !data.backgroundImage) {
+                console.log(`[Template Load] Attempting to retrieve from shadow storage: ${data.id}`);
+                const shadow = await this.persistenceService.getDesign(data.id);
+                if (shadow) {
+                    console.log(`[Shadow Storage] ✅ Retrieved deep payload for template: ${data.id}`);
+                    data = shadow;
+                } else {
+                    console.warn(`[Shadow Storage] ⚠️ No data found for ID: ${data.id}`);
+                    // Fallback to inline JSON if present
+                    if (data.json) {
+                        console.log('[Template Load] Falling back to inline JSON');
+                        data = typeof data.json === 'string' ? JSON.parse(data.json) : data.json;
+                    } else {
+                        throw new Error(`Template ${data.id} not found in shadow storage and has no inline JSON`);
+                    }
                 }
-            } catch (e) {
-                console.error('Error sanitizing JSON:', e);
             }
+
+            if (!data || (!data.objects && !data.backgroundImage)) {
+                console.error('[Template Load] Invalid template data:', data);
+                throw new Error('Retrieved template contains no canvas data');
+            }
+
+            // 3. Strict Sanitization: Nukes all dead blob: URLs
+            data = this.strictSanitize(data);
 
             // Restore images from DB
             await this.restoreImagesFromStorage(data);
@@ -1041,16 +1247,15 @@ export class BannerService {
 
             // MODERN FABRIC 7+ LOADING
             try {
-                // Ensure canvas is clean and reset before loading
-                this.canvas.discardActiveObject();
-                this.canvas.clear();
-
                 // Reset viewport/zoom to defaults for consistent loading
                 this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
                 this.canvas.setZoom(1);
 
                 // For Fabric 7, loadFromJSON is the best way to restore backgrounds + objects
                 // We ensure it's awaited.
+                // Ensure canvas is clean and reset before loading
+                this.canvas.discardActiveObject();
+                this.canvas.clear();
                 await this.canvas.loadFromJSON(data);
 
                 // Extra safety: If loadFromJSON didn't restore objects (rare bug), we log it
@@ -1075,20 +1280,31 @@ export class BannerService {
 
             this.canvas.requestRenderAll();
             this.reviveCurvedElements();
-            this.refreshState();
-            this.selectedObject.set(null);
-            this.isHistoryLoading = false;
-            this.saveState();
 
-            console.log('✅ Template load process complete');
+            setTimeout(() => {
+                this.isHistoryLoading = false;
+                this.refreshState();
+                this.selectedObject.set(null);
+
+                // Initialize history with stable refs for this fresh template
+                const historyObj = this.canvas.toObject(this.SERIALIZE_PROPS);
+                this.forceStableRefs(historyObj);
+                this.history = [JSON.stringify(historyObj)];
+                this.historyStep = 0;
+
+                this.isProjectLoading.set(false);
+                this.saveState(); // Triggers first autosave after load
+                console.log('✅ Template load fully complete and signals refreshed');
+            }, 100);
 
             // Trigger info banner
             this.showTemplateInfo.set(true);
             setTimeout(() => this.showTemplateInfo.set(false), 4000);
         } catch (err) {
             console.error('Load template failed:', err);
-            alert('Failed to load template: ' + (err as Error).message);
+            this.notificationService.error('Failed to load template: ' + (err as Error).message);
             this.isHistoryLoading = false;
+            this.isProjectLoading.set(false);
         }
     }
 
@@ -1097,31 +1313,37 @@ export class BannerService {
         try {
             console.log('Adding template to canvas...', templateJson);
 
-            // Parse the template JSON
-            let data;
-            if (typeof templateJson === 'string') {
-                try {
-                    data = JSON.parse(templateJson);
-                } catch (e) {
-                    console.error('Failed to parse template JSON string:', e);
-                    throw new Error('Invalid template JSON format');
-                }
-            } else if (typeof templateJson === 'object' && templateJson !== null) {
-                data = JSON.parse(JSON.stringify(templateJson));
-            } else {
+            // 1. Initial Parsing
+            let data = templateJson;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (e) { throw new Error('Invalid JSON string'); }
             }
 
-            // CRITICAL FIX: Brute-force sanitize any remaining blob: URLs
-            try {
-                const jsonStr = JSON.stringify(data);
-                if (jsonStr.includes('blob:')) {
-                    console.warn('🧹 Sanitizing blob URLs from template JSON (Add)...');
-                    const sanitized = jsonStr.replace(/"blob:[^"]+"/g, '""');
-                    data = JSON.parse(sanitized);
+            // 2. High-Performance Shadow Retrieval (CRITICAL FIX: Ensure Additive Template also checks Shadow Store)
+            if (data && data.id && !data.objects && !data.backgroundImage) {
+                console.log(`[Add Template] Attempting to retrieve from shadow storage: ${data.id}`);
+                const shadow = await this.persistenceService.getDesign(data.id);
+                if (shadow) {
+                    console.log(`[Shadow Storage] ✅ Retrieved additive payload for: ${data.id}`);
+                    data = shadow;
+                } else {
+                    console.warn(`[Shadow Storage] ⚠️ No data found for ID: ${data.id}`);
+                    if (data.json) {
+                        console.log('[Add Template] Falling back to inline JSON');
+                        data = typeof data.json === 'string' ? JSON.parse(data.json) : data.json;
+                    } else {
+                        throw new Error(`Template ${data.id} not found in shadow storage and has no inline JSON`);
+                    }
                 }
-            } catch (e) {
-                console.error('Error sanitizing JSON:', e);
             }
+
+            if (!data || (!data.objects && !data.backgroundImage)) {
+                console.error('[Add Template] Invalid template data:', data);
+                throw new Error('Template data is empty or contains no canvas objects');
+            }
+
+            // 3. Unified High-Fidelity Sanitization
+            data = this.strictSanitize(data);
 
             // Restore images from DB
             await this.restoreImagesFromStorage(data);
@@ -1167,7 +1389,7 @@ export class BannerService {
             setTimeout(() => this.showTemplateInfo.set(false), 3000);
         } catch (err) {
             console.error('Add template to canvas failed:', err);
-            alert('Failed to add template: ' + (err as Error).message);
+            this.notificationService.error('Failed to add template: ' + (err as Error).message);
         }
     }
 
@@ -1227,22 +1449,50 @@ export class BannerService {
     private async restoreObjectImage(obj: any) {
         if (!obj) return;
 
-        // 1. Handle Images
-        if (obj.type === 'image' && obj.src) {
-            obj.src = await this.restoreUrl(obj.src);
+        // 0. Generic IDB Restoration (Applies to all objects with idbId)
+        if (obj.idbId) {
+            console.log(`[Restoration] Restoring persistence via idbId: ${obj.idbId} for ${obj.type}`);
+            const restored = await this.restoreUrl(`indexeddb://${obj.idbId}`);
+            if (restored) {
+                if (obj.src !== undefined) obj.src = restored;
+                // Update originalSrc too if it was pointing to the IDB
+                if (obj.originalSrc?.startsWith('indexeddb://')) obj.originalSrc = restored;
+                // Ensure originalImageSrc follows suit if present
+                if (obj.originalImageSrc?.startsWith('indexeddb://')) obj.originalImageSrc = restored;
+            } else {
+                console.warn(`[Restoration] Failed to restore IDB content: ${obj.idbId}`);
+            }
+        }
+
+        // 1. Fallback / Secondary Source Restoration
+        for (const key of ['src', 'originalSrc', 'originalImageSrc']) {
+            if (obj[key] && typeof obj[key] === 'string') {
+                const restored = await this.restoreUrl(obj[key]);
+                if (restored) obj[key] = restored;
+            }
         }
 
         // 2. Handle Patterns
         for (const prop of ['fill', 'stroke']) {
             const val = obj[prop];
-            if (val && typeof val === 'object' && val.type === 'pattern' && val.source) {
-                if (typeof val.source === 'string') {
-                    val.source = await this.restoreUrl(val.source);
+            if (val && typeof val === 'object' && val.type === 'pattern') {
+                // If pattern has its own idbId, restore it
+                if (val.idbId) {
+                    const restored = await this.restoreUrl(`indexeddb://${val.idbId}`);
+                    if (restored) val.source = restored;
+                } else if (typeof val.source === 'string') {
+                    const restored = await this.restoreUrl(val.source);
+                    if (restored) val.source = restored;
                 }
             }
         }
 
-        // 3. Recursively handle groups
+        // 3. Handle ClipPath
+        if (obj.clipPath) {
+            await this.restoreObjectImage(obj.clipPath);
+        }
+
+        // 4. Recursively handle groups
         if (obj.objects) {
             for (const child of obj.objects) {
                 await this.restoreObjectImage(child);
@@ -1251,19 +1501,58 @@ export class BannerService {
     }
 
     private async restoreUrl(url: string): Promise<string> {
-        if (!url || typeof url !== 'string' || !url.startsWith('indexeddb://')) return url;
+        if (!url || typeof url !== 'string' || url === 'undefined') return '';
+
+        if (url.startsWith('blob:')) {
+            try {
+                // If this fetch fails, the blob is revoked/dead.
+                const res = await fetch(url);
+                if (res.ok) return url;
+            } catch (e) {
+                // Fallthrough to empty string -> triggers IDB lookup below
+            }
+            return '';
+        }
+
+        if (!url.startsWith('indexeddb://')) return url;
+
         const id = url.replace('indexeddb://', '');
         try {
-            const blob = await this.imageStorage.getImage(id);
-            if (blob) {
-                return await this.blobToDataURL(blob);
+            // Priority 1: Main Image Storage
+            let blob = await this.imageStorage.getImage(id);
+
+            // Priority 2: Professional Persistence Fallback (Shadow Store)
+            if (!blob) {
+                console.log(`[Restoration] Falling back to PersistenceService for ${id}`);
+                blob = await this.persistenceService.loadImage(id);
             }
-            console.warn('Url not found in IDB:', id);
+
+            if (blob) {
+                // Convert back to Object URL for high-performance memory usage
+                const objectUrl = URL.createObjectURL(blob);
+                this.activeBlobUrls.push(objectUrl);
+                return objectUrl;
+            }
+            console.warn('Url not found in any IDB store:', id);
             return '';
         } catch (e) {
             console.error('Failed to restore URL:', id, e);
             return '';
         }
+    }
+
+    /**
+     * Aggressive string-based sanitization. 
+     * Identify and squash ALL dead session-specific blob URLs in the JSON 
+     * before it reaches the Fabric.js engine.
+     */
+    private strictSanitize(data: any): any {
+        if (!data) return data;
+        let dataObj = typeof data === 'string' ? JSON.parse(data) : data;
+
+        // We removed the global destructive blob regex. 
+        // Restoration is now handled property-by-property in restoreUrl with 'live' checking.
+        return dataObj;
     }
 
     private blobToDataURL(blob: Blob): Promise<string> {
@@ -1356,80 +1645,99 @@ export class BannerService {
         this.saveState();
     }
 
-    setAntiGravityBg(imageUrl: string): void {
-        const imgObj = new Image();
-        imgObj.src = imageUrl;
-        imgObj.crossOrigin = 'anonymous';
-
-        imgObj.onload = () => {
-            const bgImg = new fabric.Image(imgObj);
-
-            // Scale to cover
-            const canvasAspect = (this.canvas.width || 1200) / (this.canvas.height || 675);
-            const imgAspect = (bgImg.width || 1) / (bgImg.height || 1);
-            let scaleFactor;
-
-            if (canvasAspect >= imgAspect) {
-                scaleFactor = (this.canvas.width || 1200) / (bgImg.width || 1);
+    async setAntiGravityBg(imageUrl: string): Promise<void> {
+        // First, persist the background to IndexedDB so it's stable
+        let blob: Blob;
+        try {
+            if (imageUrl.startsWith('data:')) {
+                blob = this.dataURLtoBlob(imageUrl);
             } else {
-                scaleFactor = (this.canvas.height || 675) / (bgImg.height || 1);
+                const res = await fetch(imageUrl);
+                blob = await res.blob();
             }
+            const idbId = await this.imageStorage.saveImage(blob);
+            const stableUrl = URL.createObjectURL(blob);
+            this.activeBlobUrls.push(stableUrl);
 
-            bgImg.set({
-                originX: 'left',
-                originY: 'top',
-                scaleX: scaleFactor,
-                scaleY: scaleFactor,
-                opacity: 0.95 // Requested opacity
-            });
+            const imgObj = new Image();
+            imgObj.src = stableUrl;
+            imgObj.crossOrigin = 'anonymous';
 
-            // Apply Blur
-            // Try using standard fabric.filters or cast if needed. 
-            // Logic: In recent fabric versions, filters are under fabric.filters or via instance.
-            // We will try avoiding the type check error by casting if needed, or using the likely correct path.
-            // If fabric.Image.filters is missing in type, we use (fabric.Image as any).filters or try fabric.filters.
-            // Safe approach: (fabric as any).Image.filters.Blur OR new fabric.filters.Blur if valid.
+            imgObj.onload = () => {
+                const bgImg = new fabric.Image(imgObj);
+                (bgImg as any).idbId = idbId;
+                (bgImg as any).originalSrc = `indexeddb://${idbId}`;
 
-            const blur = new fabric.filters.Blur({
-                blur: 0.4
-            });
-            bgImg.filters = [blur];
-            bgImg.applyFilters();
+                // Scale to cover
+                const canvasAspect = (this.canvas.width || 1200) / (this.canvas.height || 675);
+                const imgAspect = (bgImg.width || 1) / (bgImg.height || 1);
+                let scaleFactor;
 
-            this.canvas.backgroundImage = bgImg;
-            this.canvas.requestRenderAll();
+                if (canvasAspect >= imgAspect) {
+                    scaleFactor = (this.canvas.width || 1200) / (bgImg.width || 1);
+                } else {
+                    scaleFactor = (this.canvas.height || 675) / (bgImg.height || 1);
+                }
 
-            // 2. Add Gradient Overlay
-            const overlayRect = new fabric.Rect({
-                left: 0,
-                top: 0,
-                width: this.canvas.width,
-                height: this.canvas.height,
-                opacity: 0.2,
-                selectable: false,
-                evented: false,
-                excludeFromExport: false,
-                name: 'gravity_overlay'
-            });
+                bgImg.set({
+                    originX: 'left',
+                    originY: 'top',
+                    scaleX: scaleFactor,
+                    scaleY: scaleFactor,
+                    opacity: 0.95 // Requested opacity
+                });
 
-            // Correct Gradient Syntax
-            const gradient = new fabric.Gradient({
-                type: 'linear',
-                coords: { x1: 0, y1: 0, x2: 0, y2: this.canvas.height || 675 },
-                colorStops: [
-                    { offset: 0, color: '#ffffff' },
-                    { offset: 1, color: '#000000' }
-                ]
-            });
+                // Apply Blur
+                // Try using standard fabric.filters or cast if needed. 
+                // Logic: In recent fabric versions, filters are under fabric.filters or via instance.
+                // We will try avoiding the type check error by casting if needed, or using the likely correct path.
+                // If fabric.Image.filters is missing in type, we use (fabric.Image as any).filters or try fabric.filters.
+                // Safe approach: (fabric as any).Image.filters.Blur OR new fabric.filters.Blur if valid.
 
-            overlayRect.set('fill', gradient);
+                const blur = new fabric.filters.Blur({
+                    blur: 0.4
+                });
+                bgImg.filters = [blur];
+                bgImg.applyFilters();
 
-            this.canvas.add(overlayRect);
-            // sendToBack might be missing in types, use moveTo(0) or cast
-            this.canvas.sendObjectToBack(overlayRect);
+                this.canvas.backgroundImage = bgImg;
+                this.canvas.requestRenderAll();
 
-            this.canvas.renderAll();
-            this.refreshState();
+                // 2. Add Gradient Overlay
+                const overlayRect = new fabric.Rect({
+                    left: 0,
+                    top: 0,
+                    width: this.canvas.width,
+                    height: this.canvas.height,
+                    opacity: 0.2,
+                    selectable: false,
+                    evented: false,
+                    excludeFromExport: false,
+                    name: 'gravity_overlay'
+                });
+
+                // Correct Gradient Syntax
+                const gradient = new fabric.Gradient({
+                    type: 'linear',
+                    coords: { x1: 0, y1: 0, x2: 0, y2: this.canvas.height || 675 },
+                    colorStops: [
+                        { offset: 0, color: '#ffffff' },
+                        { offset: 1, color: '#000000' }
+                    ]
+                });
+
+                overlayRect.set('fill', gradient);
+
+                this.canvas.add(overlayRect);
+                // sendToBack might be missing in types, use moveTo(0) or cast
+                this.canvas.sendObjectToBack(overlayRect);
+
+                this.canvas.renderAll();
+                this.refreshState();
+            };
+        } catch (e) {
+            console.error('Failed to set background', e);
+            this.notificationService.error('Failed to set background image');
         }
     }
 
@@ -1560,6 +1868,23 @@ export class BannerService {
         img.clipPath = path;
         this.canvas.renderAll();
         this.saveState();
+    }
+
+    applyBackgroundBlur(value: number) {
+        const bg = this.canvas.backgroundImage;
+        if (bg && bg instanceof fabric.Image) {
+            // Remove existing blur
+            bg.filters = (bg.filters || []).filter((f: any) => f.type !== 'Blur');
+
+            if (value > 0) {
+                const blur = new fabric.filters.Blur({ blur: value });
+                bg.filters.push(blur);
+            }
+
+            bg.applyFilters();
+            this.canvas.requestRenderAll();
+            this.saveState();
+        }
     }
 
     setBrightness(value: number): void {
@@ -1856,21 +2181,50 @@ export class BannerService {
         this.isCropping.set(true);
         this.cropTarget = img;
 
+        // 1. Lock all other objects and the canvas
+        this.canvas.discardActiveObject();
+        this.canvas.getObjects().forEach(obj => {
+            (obj as any)._prevSelectable = obj.selectable;
+            (obj as any)._prevEvented = obj.evented;
+            obj.set({ selectable: false, evented: false });
+        });
+        this.canvas.selection = false;
+
+        // 2. Create the crop overlay
+        // We match it to the image's current dimensions and orientation
+        const imgWidth = img.getScaledWidth();
+        const imgHeight = img.getScaledHeight();
+
         this.cropOverlay = new fabric.Rect({
             left: img.left,
             top: img.top,
-            width: img.getScaledWidth(),
-            height: img.getScaledHeight(),
-            fill: 'rgba(255, 255, 255, 0.2)',
-            stroke: '#7c3aed',
+            width: imgWidth,
+            height: imgHeight,
+            fill: 'rgba(0, 0, 0, 0.3)',
+            stroke: '#ffffff',
             strokeWidth: 2,
             strokeDashArray: [5, 5],
-            cornerColor: 'white',
-            cornerStrokeColor: '#7c3aed',
+            cornerColor: '#7c3aed',
             cornerSize: 12,
+            cornerStyle: 'circle',
             transparentCorners: false,
-            angle: img.angle
+            borderColor: '#7c3aed',
+            angle: img.angle,
+            originX: img.originX,
+            originY: img.originY,
+            strokeUniform: true,
+            hasRotatingPoint: false, // Professional crop tools don't rotate the crop box separately
+            lockRotation: true,
+            selectable: true,
+            evented: true,
+            name: 'crop-overlay'
         });
+
+        // Ensure handles are appropriately visible
+        this.cropOverlay.setControlsVisibility({
+            mtr: false // No rotation
+        });
+
         this.canvas.add(this.cropOverlay);
         this.canvas.setActiveObject(this.cropOverlay);
         this.canvas.renderAll();
@@ -1878,41 +2232,93 @@ export class BannerService {
 
     applyCrop(): void {
         if (!this.cropTarget || !this.cropOverlay) return;
+
         const img = this.cropTarget;
         const rect = this.cropOverlay;
 
-        const rectPoint = new fabric.Point(rect.left!, rect.top!);
-        const invertedMatrix = fabric.util.invertTransform(img.calcTransformMatrix());
-        const localTopLeft = fabric.util.transformPoint(rectPoint, invertedMatrix);
+        // 1. Calculate the transform matrix
+        const imgMatrix = img.calcTransformMatrix();
+        const invertedImgMatrix = fabric.util.invertTransform(imgMatrix);
 
-        const localPoint = {
-            x: localTopLeft.x + (img.width! / 2),
-            y: localTopLeft.y + (img.height! / 2)
-        };
+        // 2. Get the 4 corners of the crop rectangle in canvas space
+        const rectCoords = rect.getCoords();
+        const tlCanvas = rectCoords[0];
+        const brCanvas = rectCoords[2];
 
-        const absScaleX = Math.abs(img.scaleX! || 1);
-        const absScaleY = Math.abs(img.scaleY! || 1);
+        // 3. Convert them to the image's local coordinate space
+        const tlLocal = fabric.util.transformPoint(tlCanvas, invertedImgMatrix);
+        const brLocal = fabric.util.transformPoint(brCanvas, invertedImgMatrix);
+
+        // 4. Fabric object local space adjustment based on origins
+        let offsetX = tlLocal.x;
+        let offsetY = tlLocal.y;
+
+        // If origin is center, local coords are relative to center (-width/2 to width/2)
+        // We need them relative to the current crop's top-left
+        if (img.originX === 'center') offsetX += img.width / 2;
+        if (img.originY === 'center') offsetY += img.height / 2;
+
+        const cropWidth = Math.abs(brLocal.x - tlLocal.x);
+        const cropHeight = Math.abs(brLocal.y - tlLocal.y);
+
+        // 5. Update the image's crop properties
+        // IMPORTANT: update cropX/Y relative to the CURRENT cropX/cropY
+        const currentCropX = img.cropX || 0;
+        const currentCropY = img.cropY || 0;
 
         img.set({
-            cropX: (img.cropX || 0) + localPoint.x,
-            cropY: (img.cropY || 0) + localPoint.y,
-            width: rect.getScaledWidth() / absScaleX,
-            height: rect.getScaledHeight() / absScaleY,
+            cropX: currentCropX + offsetX,
+            cropY: currentCropY + offsetY,
+            width: cropWidth,
+            height: cropHeight,
+            // Update position to match the overlay's position
             left: rect.left,
-            top: rect.top
+            top: rect.top,
+            // Keep existing scale but it will naturally apply to the new width/height
+            // No need to change scaleX/Y unless we want to "stretch" it, which we don't.
         });
 
-        this.cancelCrop();
+        img.setCoords();
+
+        this.exitCropMode();
         this.canvas.renderAll();
         this.saveState();
     }
 
     cancelCrop(): void {
-        if (this.cropOverlay) this.canvas.remove(this.cropOverlay);
-        this.cropOverlay = null;
-        this.cropTarget = null;
-        this.isCropping.set(false);
+        this.exitCropMode();
         this.canvas.renderAll();
+    }
+
+    private exitCropMode(): void {
+        if (this.cropOverlay) {
+            this.canvas.remove(this.cropOverlay);
+            this.cropOverlay = null;
+        }
+
+        // Restore interactions
+        this.canvas.getObjects().forEach(obj => {
+            if ((obj as any)._prevSelectable !== undefined) {
+                obj.selectable = (obj as any)._prevSelectable;
+                obj.evented = (obj as any)._prevEvented;
+                delete (obj as any)._prevSelectable;
+                delete (obj as any)._prevEvented;
+            } else {
+                // Fallback: Default to true if no prev state (shouldn't happen)
+                obj.selectable = true;
+                obj.evented = true;
+            }
+        });
+
+        // Re-enable target image if it was lost
+        if (this.cropTarget) {
+            this.cropTarget.set({ selectable: true, evented: true });
+            this.canvas.setActiveObject(this.cropTarget);
+        }
+
+        this.canvas.selection = true;
+        this.isCropping.set(false);
+        this.cropTarget = null;
     }
 
     exportToImage(format: 'png' | 'jpeg'): void {
@@ -2090,49 +2496,110 @@ export class BannerService {
     // Autosave Logic
     private async autoSaveProject(): Promise<void> {
         try {
-            // We use the same storage mechanism as templates for safety (handling images)
-            // But for performance, we might just dump the JSON if images are already handled?
-            // To be safe, let's just dump the current JSON. 
-            // If images are data-urls, they might be large, so we prefer IndexedDB over LocalStorage.
-            const json = this.canvas.toJSON();
-            // We should ideally offload images, but that's async and might lag simple interactions.
-            // For now, let's try saving to IndexedDB directly which handles larger blobs better than LS.
-            // We'll use a specific key in the 'settings' store from ImageStorageService.
+            const json = this.canvas.toObject(this.SERIALIZE_PROPS);
 
-            // We can manually use the imageStorage db instance if we expose a method, 
-            // or just add a generic save method there. 
-            // Let's add 'saveAutosave' to ImageStorageService ideally, but for now we can reuse saveProject logic or just add a quick method here if we had access?
-            // Actually, let's assume we can add a method to ImageStorageService or use a specialized one.
-            // For quick fix: localStorage if small, but risk.
-            // Better: use imageStorage.
+            // Critical: process images before saving to IDB to ensure persistence
+            await this.processImagesForStorage(json);
 
             await this.imageStorage.saveAutosave(JSON.stringify(json));
-
         } catch (e) {
             console.warn('Autosave failed', e);
         }
     }
 
     private async loadAutosave(): Promise<void> {
+        // 0. Cancel pending saves
+        clearTimeout(this.timeoutId);
+
         try {
-            const jsonStr = await this.imageStorage.getAutosave();
+            let jsonStr = await this.imageStorage.getAutosave();
             if (jsonStr) {
-                this.isHistoryLoading = true; // Prevent autosave overlap
-                const json = JSON.parse(jsonStr);
+                this.isHistoryLoading = true;
+                this.isProjectLoading.set(true);
+                this.cleanupBlobUrls();
 
-                // Restore images from DB if needed (using existing logic for robustness)
-                await this.restoreImagesFromStorage(json);
+                // Advanced Restoration: Handle both string and direct JSON
+                let data = JSON.parse(jsonStr);
 
-                this.canvas.loadFromJSON(json).then(() => {
-                    this.canvas.renderAll();
-                    this.refreshState();
-                    this.history = [JSON.stringify(json)];
-                    this.historyStep = 0;
-                    this.isHistoryLoading = false;
-                });
+                // Strict Sanitization
+                data = this.strictSanitize(data);
+
+                // Restore images from DB
+                await this.restoreImagesFromStorage(data);
+
+                await this.canvas.loadFromJSON(data);
+                this.canvas.renderAll();
+                this.refreshState();
+
+                // Force stable refs in history
+                const historyObj = this.canvas.toObject(this.SERIALIZE_PROPS);
+                this.forceStableRefs(historyObj);
+                this.history = [JSON.stringify(historyObj)];
+                this.historyStep = 0;
+
+                this.isHistoryLoading = false;
+                this.isProjectLoading.set(false);
             }
         } catch (e) {
             console.warn('No autosave found or failed to load', e);
+            this.isHistoryLoading = false;
+            this.isProjectLoading.set(false);
+        }
+    }
+
+
+    public async loadProject(id: string): Promise<void> {
+        // 0. Cancel pending saves
+        clearTimeout(this.timeoutId);
+
+        const project = this.savedProjects().find(p => p.id === id);
+        if (!project) return;
+
+        try {
+            this.isHistoryLoading = true;
+            this.isProjectLoading.set(true);
+            this.cleanupBlobUrls();
+
+            // Fetch payload from Shadow Storage (Priority)
+            let data: any = null;
+            if (id) {
+                data = await this.persistenceService.getDesign(id);
+            }
+
+            if (!data) {
+                if (project.json && project.json.trim() !== '') {
+                    try { data = JSON.parse(project.json); } catch (e) { console.error('Legacy JSON parse failed'); }
+                }
+            }
+
+            if (!data) throw new Error('Could not retrieve project data from any store');
+
+            // 3. Strict Sanitization: Kill all session-specific blobs
+            data = this.strictSanitize(data);
+
+            // Restore images from DB
+            await this.restoreImagesFromStorage(data);
+
+            await this.canvas.loadFromJSON(data);
+
+            this.activeProjectId.set(id);
+            this.canvas.renderAll();
+            this.refreshState();
+
+            // Initialize history with stable refs
+            const historyObj = this.canvas.toObject(this.SERIALIZE_PROPS);
+            this.forceStableRefs(historyObj);
+            this.history = [JSON.stringify(historyObj)];
+            this.historyStep = 0;
+
+            this.notificationService.success('Project loaded');
+            this.isProjectLoading.set(false);
+            this.isHistoryLoading = false;
+            console.log('✅ Template/Project loaded successfully');
+        } catch (err) {
+            console.error('Failed to load template/project', err);
+            this.notificationService.error('Failed to load project');
+            this.isProjectLoading.set(false);
             this.isHistoryLoading = false;
         }
     }
@@ -2141,7 +2608,15 @@ export class BannerService {
     private timeoutId: any;
     private saveState(): void {
         if (this.isHistoryLoading) return;
-        const json = JSON.stringify(this.canvas.toJSON());
+
+        const obj = this.canvas.toObject(this.SERIALIZE_PROPS);
+
+        // Sync pass for history stability: 
+        // Force indexeddb:// refs for any object that already has an IDB link.
+        // This makes history states immune to session blob expiration.
+        this.forceStableRefs(obj);
+
+        const json = JSON.stringify(obj);
         this.historyStep++;
         this.history = this.history.slice(0, this.historyStep);
         this.history.push(json);
@@ -2151,6 +2626,36 @@ export class BannerService {
         this.timeoutId = setTimeout(() => {
             this.autoSaveProject();
         }, 1000);
+    }
+
+    private forceStableRefs(obj: any) {
+        if (!obj) return;
+        if (obj.objects) {
+            obj.objects.forEach((child: any) => this.forceStableRefs(child));
+        }
+
+        if (obj.idbId) {
+            if (obj.type === 'image') obj.src = `indexeddb://${obj.idbId}`;
+            // Handle originalSrc if it exists
+            if (obj.originalSrc && (obj.originalSrc.startsWith('blob:') || obj.originalSrc.startsWith('http'))) {
+                // Try to keep it as IDB ref if possible
+                if (obj.idbId) obj.originalSrc = `indexeddb://${obj.idbId}`;
+            }
+        }
+
+        // Patterns
+        ['fill', 'stroke'].forEach(prop => {
+            if (obj[prop] && obj[prop].type === 'pattern' && obj[prop].idbId) {
+                obj[prop].source = `indexeddb://${obj[prop].idbId}`;
+            }
+        });
+
+        // BG/Overlay
+        ['backgroundImage', 'overlayImage'].forEach(prop => {
+            if (obj[prop] && obj[prop].idbId) {
+                obj[prop].src = `indexeddb://${obj[prop].idbId}`;
+            }
+        });
     }
 
     // Projects Persistence
@@ -2172,21 +2677,12 @@ export class BannerService {
         this.canvas.discardActiveObject();
         this.canvas.requestRenderAll();
 
-        // Include custom properties in serialization
-        const customProps = ['curvature', 'imageCurvature', 'isCurvedGroup', 'id', 'name', 'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip'];
-        const json = this.canvas.toObject(customProps);
+        const json = this.canvas.toObject(this.SERIALIZE_PROPS);
         // Save dimensions for accurate restoration
         (json as any).width = this.canvas.width;
         (json as any).height = this.canvas.height;
         await this.processImagesForStorage(json);
-
-        // Safety Check: Sanitize residual blob URLs
-        const jsonString = JSON.stringify(json);
-        let finalJson = jsonString;
-        if (jsonString.includes('"blob:')) {
-            console.warn('Sanitizing Project JSON from blob URLs');
-            finalJson = jsonString.replace(/"blob:[^"]+"/g, '""');
-        }
+        const finalJson = JSON.stringify(json);
 
         const thumbnail = this.canvas.toDataURL({
             format: 'jpeg',
@@ -2194,12 +2690,13 @@ export class BannerService {
             multiplier: 0.15
         });
 
-        const activeId = this.activeProjectId();
         const current = this.savedProjects();
+        const activeId = this.activeProjectId();
         let updated: SavedProject[];
+        let targetId: string;
 
         if (activeId) {
-            // Update existing AND move to top
+            targetId = activeId;
             const existing = current.find(p => p.id === activeId);
             const others = current.filter(p => p.id !== activeId);
 
@@ -2207,115 +2704,109 @@ export class BannerService {
                 const updatedProject = {
                     ...existing,
                     name: name || existing.name,
-                    json: finalJson,
+                    json: '', // Shadow storage
                     thumbnail,
                     date: Date.now()
                 };
                 updated = [updatedProject, ...others];
             } else {
-                updated = current; // Should not happen
+                updated = current;
             }
         } else {
-            // Create new
+            targetId = Date.now().toString();
             const newProject: SavedProject = {
-                id: Date.now().toString(),
+                id: targetId,
                 name,
-                json: finalJson,
+                json: '', // Shadow storage
                 thumbnail,
                 date: Date.now()
             };
             updated = [newProject, ...current];
-            this.activeProjectId.set(newProject.id);
+            this.activeProjectId.set(targetId);
         }
+
+        // Save bulky JSON to shadow store
+        await this.persistenceService.saveDesign(targetId, json);
 
         this.savedProjects.set(updated);
         await this.imageStorage.saveProjects(updated);
         this.isSaving.set(false);
     }
 
-    public async loadProject(id: string): Promise<void> {
-        const project = this.savedProjects().find(p => p.id === id);
-        if (!project) {
-            console.error('Project not found:', id);
-            alert('Project not found');
-            return;
-        }
 
+
+    /**
+     * Professional Save/Load Handlers
+     */
+    async saveDesignToPersistence(id: string): Promise<void> {
         try {
-            console.log('Loading project:', project.name, id);
-            this.isProjectLoading.set(true);
+            // High-fidelity serialization
+            const json = this.canvas.toObject(this.SERIALIZE_PROPS);
+
+            // Sync IDs if they exist
+            this.forceStableRefs(json);
+
+            // Save to the professional persistence layer
+            const db = (this.persistenceService as any).dbPromise || (await (this.persistenceService as any).initDB());
+            const designsStore = 'designs';
+
+            // Instead of relying on PersistenceService.saveDesign which uses toJSON(),
+            // we manually store the high-fidelity object for better results.
+            const dbInstance = await (this.persistenceService as any).dbPromise;
+            return new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([designsStore], 'readwrite');
+                const store = transaction.objectStore(designsStore);
+                const request = store.put({
+                    id,
+                    json,
+                    timestamp: Date.now()
+                });
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+        } catch (e) {
+            console.error('Failed to save design to persistence:', e);
+        }
+    }
+
+    async loadDesignFromPersistence(id: string): Promise<void> {
+        try {
             this.isHistoryLoading = true;
-            this.activeProjectId.set(id);
-            this.canvas.discardActiveObject();
+            this.cleanupBlobUrls();
 
-            // Parse JSON
-            let data;
-            if (typeof project.json === 'string') {
-                try {
-                    data = JSON.parse(project.json);
-                } catch (e) {
-                    console.error('Failed to parse project JSON:', e);
-                    throw new Error('Invalid project data format');
-                }
+            const dbInstance = await (this.persistenceService as any).dbPromise;
+            const designsStore = 'designs';
+
+            const data: any = await new Promise((resolve, reject) => {
+                const transaction = dbInstance.transaction([designsStore], 'readonly');
+                const store = transaction.objectStore(designsStore);
+                const request = store.get(id);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+
+            if (data && data.json) {
+                // Restore images from DB
+                await this.restoreImagesFromStorage(data.json);
+
+                await this.canvas.loadFromJSON(data.json);
+                this.canvas.renderAll();
+                this.refreshState();
+
+                // Initialize history with stable refs
+                const historyObj = this.canvas.toObject(this.SERIALIZE_PROPS);
+                this.forceStableRefs(historyObj);
+                this.history = [JSON.stringify(historyObj)];
+                this.historyStep = 0;
+
+                console.log(`Design ${id} loaded with high-fidelity accuracy.`);
             } else {
-                data = JSON.parse(JSON.stringify(project.json));
+                throw new Error('Design not found in persistence');
             }
-
-            console.log('Project data parsed, restoring images...');
-
-            // Restore images from IndexedDB
-            await this.restoreImagesFromStorage(data);
-
-            console.log('Project images restored, loading into canvas...');
-
-            // Restore canvas dimensions if present
-            if (data.width && data.height) {
-                this.resizeCanvas(data.width, data.height);
-            }
-
-            // MODERN FABRIC 7+ LOADING
-            try {
-                this.canvas.discardActiveObject();
-                this.canvas.clear();
-                this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-                this.canvas.setZoom(1);
-
-                await this.canvas.loadFromJSON(data);
-
-                // Fallback check: If objects didn't load (rare async issue)
-                if (this.canvas.getObjects().length === 0 && data.objects && data.objects.length > 0) {
-                    console.warn('⚠️ Manual object injection fallback for project');
-                    const objects = await (fabric.util as any).enlivenObjects(data.objects);
-                    if (objects && objects.length > 0) {
-                        this.canvas.add(...objects);
-                    }
-                }
-
-                console.log('🎨 canvas.loadFromJSON project completed');
-            } catch (e) {
-                console.error('🔥 Error during canvas.loadFromJSON (project):', e);
-                if (data.objects) {
-                    const objects = await (fabric.util as any).enlivenObjects(data.objects);
-                    this.canvas.add(...objects);
-                }
-            }
-
-            this.canvas.requestRenderAll();
-            this.reviveCurvedElements();
-            this.refreshState();
-            this.selectedObject.set(null);
             this.isHistoryLoading = false;
-            this.history = [JSON.stringify(data)];
-            this.historyStep = 0;
-            this.isProjectLoading.set(false);
-
-            console.log('✅ Project loaded successfully:', project.name);
-        } catch (err) {
-            console.error('Failed to load project:', err);
-            alert('Failed to load project: ' + (err as Error).message);
+        } catch (e) {
+            console.error('Failed to load professional design:', e);
             this.isHistoryLoading = false;
-            this.isProjectLoading.set(false);
-            this.activeProjectId.set(null);
         }
     }
 
@@ -2481,7 +2972,15 @@ export class BannerService {
             originY: 'center'
         }) as any;
 
-        group.originalImageSrc = sourceImg.src || sourceImg.toDataURL();
+        // CRITICAL: Preserve persistence links
+        const persistentId = (currentObj as any).idbId;
+        if (persistentId) {
+            group.idbId = persistentId;
+            group.originalImageSrc = `indexeddb://${persistentId}`;
+        } else {
+            group.originalImageSrc = sourceImg.src || sourceImg.toDataURL();
+        }
+
         group.isCurvedGroup = true;
         group.imageCurvature = value;
 

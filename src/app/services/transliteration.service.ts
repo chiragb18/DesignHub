@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import Sanscript from '@indic-transliteration/sanscript';
 
 @Injectable({
-    providedIn: 'root'
+    providedIn: 'root',
 })
 export class TransliterationService {
     /**
@@ -12,59 +12,58 @@ export class TransliterationService {
     public transliterate(text: string): string {
         if (!text) return '';
 
-        // We only want to transliterate English characters.
-        // Emojis and Devanagari should be preserved.
-        // Rule: Transliterate sequences of A-Z, a-z.
-
-        // This is a simple strategy:
-        // Split by non-alphabetic characters (including spaces, emojis, punctuation),
-        // transliterate the alphabetic parts, then join back.
-
-        // However, ITRANS uses some symbols like ^ or .
-        // For general phonetic typing, we can stick to a simpler regex.
-
-        return text.replace(/[A-Za-z']+/g, (match) => {
-            // Convert to Devanagari using itrans scheme
-            // Sanscript.t(text, from, to)
-            let dev = Sanscript.t(match.toLowerCase(), 'itrans', 'devanagari');
-
-            // Some adjustments for common phonetic expectations if needed
-            // e.g., 'a' at the end of a word in Marathi often should be silent if it's not 'aa'
-            // but 'sanscript' handles ITRANS which is quite standard.
-
-            return dev;
+        // Strategy: Replace only Latin word blocks with optional markers to preserve emojis, digits and formatting.
+        // We use a regex that captures Latin words that might be mixed with already transliterated Marathi.
+        return text.replace(/([\u0900-\u097FA-Za-z0-9'_\^]*[A-Za-z][\u0900-\u097FA-Za-z0-9'_\^]*)/g, (match) => {
+            try {
+                // If it contains Marathi characters, convert to ITRANS first
+                const isMixed = /[\u0900-\u097F]/.test(match);
+                const itransWord = isMixed ? this.toItrans(match) : match;
+                const result = this.phoneticMarathi(itransWord);
+                return result || match;
+            } catch (e) {
+                console.error('[TransliterationService] Error in transliterate:', e);
+                return match;
+            }
         });
     }
 
     /**
-   * Converts Devanagari back to ITRANS (English phonetic)
-   */
+     * Converts Devanagari back to ITRANS (English phonetic)
+     * Useful for "re-reading" partially typed words.
+     */
     public toItrans(text: string): string {
         if (!text) return '';
         return Sanscript.t(text, 'devanagari', 'itrans');
     }
 
     /**
-     * A more advanced transliterator that handles vowels at the end of words 
+     * A more advanced transliterator that handles vowels at the end of words
      * more naturally for Marathi phonetic typing.
      */
     public phoneticMarathi(input: string): string {
         if (!input) return '';
 
-        // We allow case-sensitive input so users can type 'L' for 'ळ' or 'T' for 'ट'.
-        // We pre-process some common double-vowel expectations for a smoother feel.
+        // Allow case-sensitive input for precise mapping
+        // Pre-process common phonetic patterns for natural Marathi feel
         let processed = input
             .replace(/aa/g, 'A')
             .replace(/ee/g, 'I')
             .replace(/oo/g, 'U')
             .replace(/shh/g, 'Sh')
-            .replace(/chh/g, 'Ch');
+            .replace(/chh/g, 'Ch')
+            .replace(/w/g, 'v')
+            .replace(/W/g, 'v')
+            .replace(/Z/g, 'J')
+            .replace(/z/g, 'j');
 
+        // Use Sanscript for ITRANS to Devanagari conversion
         let result = Sanscript.t(processed, 'itrans', 'devanagari');
 
-        // Natural Marathi: Remove trailing virama for a soft stop 
-        // (e.g., 'shubh' -> 'शुभ' instead of 'शुभ्').
-        if (result.length > 1 && result.endsWith('्')) {
+        // Natural Marathi stop: Only remove trailing halant ('्') if:
+        // 1. It's not a single consonant (avoid 'b' -> '')
+        // 2. The user didn't explicitly use halant markers like '_' or '^'
+        if (result.length > 1 && result.endsWith('्') && !input.endsWith('_') && !input.endsWith('^')) {
             result = result.substring(0, result.length - 1);
         }
 

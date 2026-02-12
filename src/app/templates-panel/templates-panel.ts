@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { BannerService, Template } from '../services/banner.service';
 import { MatIconModule } from '@angular/material/icon';
 import { FormsModule } from '@angular/forms';
+import { NotificationService } from '../services/notification.service';
 
 @Component({
     selector: 'app-templates-panel',
@@ -13,6 +14,7 @@ import { FormsModule } from '@angular/forms';
 })
 export class TemplatesPanel {
     public bannerService = inject(BannerService);
+    private notificationService = inject(NotificationService);
 
     searchQuery = signal('');
     selectedCategory = signal('All');
@@ -68,13 +70,7 @@ export class TemplatesPanel {
     }
 
 
-    // Modal State
-    isSaveModalOpen = false;
-    templateNameInput = '';
-    saveCategory: string = 'Template';
-
     openSaveModal(category: string = 'Template') {
-        this.saveCategory = category;
         let defaultName = 'Untitled ' + category;
         const activeId = this.bannerService.activeTemplateId();
         const activeTemplate = this.bannerService.savedTemplates().find(t => t.id === activeId);
@@ -82,23 +78,20 @@ export class TemplatesPanel {
         if (activeTemplate && activeTemplate.isCustom) {
             defaultName = activeTemplate.name;
         }
-        this.templateNameInput = defaultName;
-        this.isSaveModalOpen = true;
-    }
 
-    closeSaveModal() {
-        this.isSaveModalOpen = false;
-    }
-
-    async confirmSaveTemplate() {
-        if (!this.templateNameInput.trim()) return;
-
-        const success = await this.bannerService.saveTemplate(this.templateNameInput, this.saveCategory);
-        if (success) {
-            this.showSaveSuccess.set(true);
-            setTimeout(() => this.showSaveSuccess.set(false), 3000);
-            this.closeSaveModal();
-        }
+        this.notificationService.prompt(
+            `Save as ${category}`,
+            `Enter a name for your ${category.toLowerCase()}:`,
+            defaultName,
+            async (name) => {
+                if (name) {
+                    const success = await this.bannerService.saveTemplate(name, category);
+                    if (success) {
+                        this.notificationService.success(`${category} saved successfully!`);
+                    }
+                }
+            }
+        );
     }
 
     // New specific save actions
@@ -137,23 +130,33 @@ export class TemplatesPanel {
 
     // Load vs Append
     applyTemplate(template: Template) {
-        console.log('Apply template clicked:', template);
-        if (confirm('Replace current design with this?')) {
-            this.bannerService.activeTemplateId.set(template.isCustom ? template.id : null);
-            console.log('Loading template with json:', template.json);
-            this.bannerService.loadTemplate(template.json);
-        }
+        this.notificationService.confirm(
+            'Load Template',
+            'Replace current design with this? Unsaved changes will be lost.',
+            () => {
+                this.bannerService.activeTemplateId.set(template.isCustom ? template.id : null);
+                // Pass the entire template object, not template.json (which is null in shadow storage)
+                this.bannerService.loadTemplate(template);
+                this.notificationService.info('Template loaded');
+            }
+        );
     }
 
     addToCanvas(template: Template) {
         console.log('Add to canvas clicked:', template);
-        this.bannerService.addTemplateToCanvas(template.json);
+        // Pass the entire template object, not template.json (which is null in shadow storage)
+        this.bannerService.addTemplateToCanvas(template);
     }
 
     async deleteTemplate(event: Event, template: Template) {
         event.stopPropagation();
-        if (confirm('Delete this item?')) {
-            await this.bannerService.deleteTemplate(template.id);
-        }
+        this.notificationService.confirm(
+            'Delete Item',
+            `Are you sure you want to delete "${template.name}"? This action cannot be undone.`,
+            async () => {
+                await this.bannerService.deleteTemplate(template.id);
+                this.notificationService.success('Item deleted');
+            }
+        );
     }
 }
