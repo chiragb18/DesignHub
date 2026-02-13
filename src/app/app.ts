@@ -5,11 +5,12 @@ import { RightSidebarComponent } from './right-sidebar/right-sidebar';
 import { CanvasEditor } from './canvas-editor/canvas-editor';
 import { BannerService } from './services/banner.service';
 import { NotificationContainer } from './notification-container/notification-container';
+import { MobileToolbarComponent } from './mobile-toolbar/mobile-toolbar';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, NavbarComponent, RightSidebarComponent, CanvasEditor, NotificationContainer],
+  imports: [CommonModule, NavbarComponent, RightSidebarComponent, CanvasEditor, NotificationContainer, MobileToolbarComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
@@ -19,6 +20,7 @@ export class App {
 
   sidebarWidth = 350;
   isResizing = false;
+  showMobileSidebar = signal(false);
 
   private onMouseMove = (event: MouseEvent) => this.onResizing(event);
   private onMouseUp = () => this.stopResizing();
@@ -51,5 +53,13 @@ export class App {
 
   resetSidebar() {
     this.sidebarWidth = 280;
+  }
+
+  toggleMobileSidebar() {
+    this.showMobileSidebar.set(!this.showMobileSidebar());
+  }
+
+  closeMobileSidebar() {
+    this.showMobileSidebar.set(false);
   }
 }

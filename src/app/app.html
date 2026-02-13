@@ -1,10 +1,10 @@
-<div class="editor-shell">
+<div class="editor-shell" [class.is-mobile]="bannerService.isMobile()">
     <!-- Full Width Top Navbar -->
     <app-navbar class="top-nav"></app-navbar>
 
     <div class="main-layout">
-        <!-- New Left Nav Sidebar -->
-        <div class="nav-sidebar">
+        <!-- Left Nav Sidebar -->
+        <div class="nav-sidebar" *ngIf="!bannerService.isMobile()">
             <button [class.active]="bannerService.activeTab() === 'templates'"
                 (click)="bannerService.activeTab.set('templates')" title="Templates">
                 <span class="material-symbols-outlined">grid_view</span>
@@ -46,23 +46,6 @@
         <div class="center-content">
             <app-canvas-editor></app-canvas-editor>
 
-            <!-- Floating Zoom Controls -->
-            <!-- <div class="floating-zoom-bar">
-                <button (click)="bannerService.zoomOut()" title="Zoom Out">
-                    <span class="material-symbols-outlined">remove</span>
-                </button>
-                <div class="zoom-value" (click)="bannerService.resetZoom()">
-                    {{ (bannerService.zoomLevel() * 100).toFixed(0) }}%
-                </div>
-                <button (click)="bannerService.zoomIn()" title="Zoom In">
-                    <span class="material-symbols-outlined">add</span>
-                </button>
-                <div class="zoom-divider"></div>
-                <button (click)="bannerService.resetZoom()" title="Reset Zoom">
-                    <span class="material-symbols-outlined">aspect_ratio</span>
-                </button>
-            </div> -->
-
             <!-- Template Info Banner -->
             <div class="template-info-banner" *ngIf="bannerService.showTemplateInfo()">
                 <span class="material-symbols-outlined icon">info</span>
@@ -78,13 +61,24 @@
             </div>
         </div>
 
-        <!-- Sidebar Resizer -->
-        <div class="sidebar-resizer" (mousedown)="startResizing($event)" (dblclick)="resetSidebar()">
+        <!-- Sidebar Resizer (Desktop Only) -->
+        <div class="sidebar-resizer" *ngIf="!bannerService.isMobile()" (mousedown)="startResizing($event)"
+            (dblclick)="resetSidebar()">
             <div class="resizer-inner"></div>
         </div>
 
+        <!-- Right Property Sidebar Overlay (Mobile) -->
+        <div class="mobile-sidebar-overlay" *ngIf="bannerService.isMobile() && bannerService.activeTab() !== ''"
+            (click)="bannerService.activeTab.set('')"></div>
+
         <!-- Right Property Sidebar -->
-        <app-right-sidebar [style.width.px]="sidebarWidth"></app-right-sidebar>
+        <app-right-sidebar [class.mobile-bottom-sheet]="bannerService.isMobile()"
+            [class.show]="bannerService.isMobile() && bannerService.activeTab() !== ''"
+            [style.width.px]="bannerService.isMobile() ? null : sidebarWidth">
+        </app-right-sidebar>
     </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <app-mobile-toolbar *ngIf="bannerService.isMobile()"></app-mobile-toolbar>
 </div>
 <app-notification-container></app-notification-container>

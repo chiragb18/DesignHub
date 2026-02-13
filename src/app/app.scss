@@ -280,3 +280,106 @@ app-sidebar {
         transform: translate(-50%, 0);
     }
 }
+
+// Mobile Bottom Sheet Animation
+@keyframes mobileSlideUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+// Tablet Responsive (768px - 1024px)
+@media (max-width: 1024px) {
+    .nav-sidebar {
+        width: 60px;
+        button {
+            height: 60px;
+            .material-symbols-outlined { font-size: 22px; }
+        }
+    }
+}
+
+// Mobile Responsive (Below 768px)
+@media (max-width: 767px) {
+    .editor-shell {
+        height: 100vh;
+        height: -webkit-fill-available;
+    }
+
+    .main-layout {
+        flex-direction: column;
+        padding-bottom: 64px; // For mobile toolbar
+    }
+
+    .center-content {
+        padding: 10px;
+        background: #f1f5f9;
+        
+        app-canvas-editor {
+            width: 100% !important;
+            max-width: 100vw;
+        }
+    }
+
+    .mobile-sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1100;
+        backdrop-filter: blur(2px);
+    }
+
+    .mobile-bottom-sheet {
+        position: fixed !important;
+        bottom: 0;
+        left: 0;
+        width: 100% !important;
+        height: 70vh !important;
+        max-height: 85vh !important;
+        background: white;
+        z-index: 1200;
+        border-radius: 20px 20px 0 0;
+        box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.15);
+        transform: translateY(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: none;
+        overflow-y: auto;
+        padding: 20px;
+
+        &.show {
+            display: block;
+            transform: translateY(0);
+            animation: mobileSlideUp 0.3s ease-out;
+        }
+
+        // Add a handle bar at the top
+        &::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+    }
+
+    .template-info-banner {
+        top: 12px;
+        font-size: 11px;
+        width: 90%;
+        text-align: center;
+    }
+
+    .template-helper-action {
+        bottom: 80px;
+    }
+}

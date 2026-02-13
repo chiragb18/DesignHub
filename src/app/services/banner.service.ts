@@ -76,6 +76,7 @@ export class BannerService {
     public activeProjectId = signal<string | null>(null);
     public curvedText = signal<number>(0);
     public curvedImage = signal<number>(0);
+    public isMobile = signal<boolean>(false);
 
     private cropOverlay: fabric.Rect | null = null;
     private cropTarget: fabric.Image | null = null;
@@ -101,12 +102,32 @@ export class BannerService {
     constructor() { }
 
     async initCanvas(canvasId: string): Promise<void> {
+        this.updateMobileState();
+
+        let width = 1200;
+        let height = 675;
+
+        if (typeof window !== 'undefined') {
+            if (window.innerWidth <= 1024) {
+                width = window.innerWidth - 20;
+                height = width * (675 / 1200);
+            }
+        }
+
         this.canvas = new fabric.Canvas(canvasId, {
-            width: 1200,
-            height: 675,
+            width: width,
+            height: height,
             backgroundColor: '#ffffff',
-            preserveObjectStacking: true
+            preserveObjectStacking: true,
+            enableRetinaScaling: true,
+            allowTouchScrolling: true,
+            stopContextMenu: true
         });
+
+        // Match initial zoom to design ratio (1200px base)
+        const initialZoom = width / 1200;
+        this.canvas.setZoom(initialZoom);
+        this.zoomLevel.set(initialZoom);
 
         // Set initial gradient from user request
         this.setInitialGradient();
@@ -135,6 +156,34 @@ export class BannerService {
 
         this.refreshState();
         this.saveState();
+
+        if (typeof window !== 'undefined') {
+            window.addEventListener('resize', () => this.handleResize());
+        }
+    }
+
+    private updateMobileState(): void {
+        if (typeof window !== 'undefined') {
+            this.isMobile.set(window.innerWidth < 768);
+        }
+    }
+
+    private handleResize(): void {
+        if (!this.canvas) return;
+        this.updateMobileState();
+
+        let width = 1200;
+        if (window.innerWidth <= 1024) {
+            width = window.innerWidth - 20;
+        }
+
+        const height = width * (675 / 1200);
+        const zoom = width / 1200;
+
+        this.canvas.setDimensions({ width, height });
+        this.canvas.setZoom(zoom);
+        this.zoomLevel.set(zoom);
+        this.canvas.renderAll();
     }
 
     public brushType = signal<'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted'>('pencil');
