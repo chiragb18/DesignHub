@@ -17,51 +17,7 @@ export class NavbarComponent {
 
   activeMenu: string | null = null;
 
-  // Canvas Size UI State
-  canvasWidth = 1080;
-  canvasHeight = 1080;
-  lockRatio = true;
 
-  presets = [
-    { name: 'Mobile', width: 1080, height: 1920, icon: 'smartphone' },
-    { name: 'Tablet', width: 1536, height: 2048, icon: 'tablet_mac' },
-    { name: 'Desktop', width: 1920, height: 1080, icon: 'desktop_windows' },
-    { name: 'Square', width: 1080, height: 1080, icon: 'square' },
-    { name: 'Story', width: 1080, height: 1920, icon: 'ad_units' },
-    { name: 'Banner', width: 1200, height: 628, icon: 'crop_landscape' }
-  ];
-
-  setCanvasSize(w: number, h: number) {
-    this.canvasWidth = w;
-    this.canvasHeight = h;
-    this.bannerService.resizeCanvas(w, h);
-    this.closeMenus();
-  }
-
-  toggleLock() {
-    this.lockRatio = !this.lockRatio;
-  }
-
-  updateCustomWidth(val: number) {
-    if (this.lockRatio) {
-      const ratio = this.canvasHeight / this.canvasWidth;
-      this.canvasHeight = Math.round(val * ratio);
-    }
-    this.canvasWidth = val;
-  }
-
-  updateCustomHeight(val: number) {
-    if (this.lockRatio) {
-      const ratio = this.canvasWidth / this.canvasHeight;
-      this.canvasWidth = Math.round(val * ratio);
-    }
-    this.canvasHeight = val;
-  }
-
-  applyCustomSize() {
-    this.bannerService.resizeCanvas(this.canvasWidth, this.canvasHeight);
-    this.closeMenus();
-  }
 
   toggleMenu(menu: string) {
     this.activeMenu = this.activeMenu === menu ? null : menu;
@@ -192,7 +148,8 @@ export class NavbarComponent {
   async saveAsTemplate() {
     this.notificationService.prompt('Save as Template', 'Enter template name:', 'My Template', async (name) => {
       if (name) {
-        await this.bannerService.saveTemplate(name, 'Template');
+        // Use true as the 3rd argument to force creating a new template instead of overwriting
+        await this.bannerService.saveTemplate(name, 'Template', true);
         this.notificationService.success('Template saved to library!');
         this.closeMenus();
       }
@@ -202,7 +159,7 @@ export class NavbarComponent {
   async saveAsDesign() {
     this.notificationService.prompt('Save as Design', 'Enter design name:', 'My Design', async (name) => {
       if (name) {
-        await this.bannerService.saveTemplate(name, 'Design');
+        await this.bannerService.saveTemplate(name, 'Design', true);
         this.notificationService.success('Design saved to library!');
         this.closeMenus();
       }
@@ -212,7 +169,7 @@ export class NavbarComponent {
   async saveAsBackground() {
     this.notificationService.prompt('Save Background', 'Enter background name:', 'My Background', async (name) => {
       if (name) {
-        await this.bannerService.saveTemplate(name, 'Background');
+        await this.bannerService.saveTemplate(name, 'Background', true);
         this.notificationService.success('Background saved to library!');
         this.closeMenus();
       }

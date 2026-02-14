@@ -116,5 +116,15 @@
                 </div>
             </div>
         </section>
+
+        <!-- DEPLOYMENT UTILITY (Developer Only) -->
+        <section class="content-section dev-utils">
+            <button class="export-deploy-btn" (click)="bannerService.exportAllTemplatesToJSON()"
+                title="Download all local templates as JSON for deployment">
+                <span class="material-symbols-outlined">publish</span>
+                <span>Prepare for Deployment</span>
+            </button>
+            <p class="export-hint">Export all local items to commit them to the repository for everyone to see.</p>
+        </section>
     </div>
 </div>

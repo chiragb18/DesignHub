@@ -41,6 +41,12 @@ export class BannerService {
     private history: string[] = [];
     private historyStep: number = -1;
     private isHistoryLoading: boolean = false;
+    private readonly MAX_HISTORY = 50;
+
+    // Writable signals for UI (updated manually since historyStep is a plain property)
+    public canUndo = signal<boolean>(false);
+    public canRedo = signal<boolean>(false);
+
     private rbFunctionCache: any = null;
 
     // State signals
@@ -87,11 +93,15 @@ export class BannerService {
 
     // Props to include in JSON serialization
     private readonly SERIALIZE_PROPS = [
-        'curvature', 'imageCurvature', 'isCurvedGroup', 'id', 'name',
+        'left', 'top', 'width', 'height', 'scaleX', 'scaleY', 'angle',
+        'originX', 'originY', 'flipX', 'flipY', 'skewX', 'skewY',
+        'id', 'name', 'idbId', 'originalSrc', 'isBgRemoved', 'excludeFromExport',
         'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip',
-        'idbId', 'originalSrc', 'isBgRemoved', 'excludeFromExport',
         'opacity', 'visible', 'selectable', 'evented', 'lockMovementX', 'lockMovementY',
-        'cropX', 'cropY', 'filters', 'clipPath'
+        'cropX', 'cropY', 'filters', 'clipPath', 'crossOrigin', 'stroke', 'strokeWidth', 'strokeDashArray', 'fill',
+        'shadow', 'rx', 'ry', 'radius', 'points', 'path', 'curvature', 'imageCurvature', 'isCurvedGroup',
+        'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'underline', 'overline', 'strikethrough',
+        'textAlign', 'lineHeight', 'charSpacing', 'textBackgroundColor'
     ];
 
     private imageStorage = inject(ImageStorageService);
@@ -99,7 +109,153 @@ export class BannerService {
     private persistenceService = inject(PersistenceService);
     private notificationService = inject(NotificationService);
 
-    constructor() { }
+    constructor() {
+        this.debouncedSave = this.debounce(this.saveState.bind(this), 500);
+    }
+
+    // ... (InitCanvas and other methods remain) ...
+
+    // Manual Adjustment Debouncer
+    private debouncedSave: () => void;
+    private debounce(func: Function, wait: number) {
+        let timeout: any;
+        return (...args: any[]) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
+    // ... (Skip to applying filters) ...
+
+    applyFilter(filterType: 'Grayscale' | 'Invert' | 'Sepia' | 'None'): void {
+        const activeObject = this.canvas.getActiveObject();
+        if (activeObject && activeObject.type === 'image') {
+            const img = activeObject as fabric.Image;
+
+            // Save COMPREHENSIVE state to prevent any shifting/resizing
+            const state = {
+                width: img.width,
+                height: img.height,
+                scaleX: img.scaleX,
+                scaleY: img.scaleY,
+                left: img.left,
+                top: img.top,
+                cropX: img.cropX,
+                cropY: img.cropY,
+                angle: img.angle,
+                flipX: img.flipX,
+                flipY: img.flipY,
+                skewX: img.skewX,
+                skewY: img.skewY
+            };
+
+            const prevCaching = img.objectCaching;
+            img.set('objectCaching', false);
+
+            // Ensure safe execution
+            try {
+                // Ensure crossOrigin is set for filters to work
+                if ((img as any).crossOrigin !== 'anonymous') {
+                    img.set({ crossOrigin: 'anonymous' });
+                }
+
+                // Remove existing simple filters
+                img.filters = (img.filters || []).filter(f =>
+                    !['Grayscale', 'Invert', 'Sepia'].includes((f as any).type)
+                );
+
+                if (filterType === 'Grayscale') img.filters.push(new fabric.filters.Grayscale());
+                else if (filterType === 'Invert') img.filters.push(new fabric.filters.Invert());
+                else if (filterType === 'Sepia') img.filters.push(new fabric.filters.Sepia());
+
+                img.applyFilters();
+
+                // CRITICAL: Force Restore of all geometric properties
+                // fabric.Image.applyFilters() can sometimes reset scale or dimensions based on the new element
+                img.set(state);
+
+                // Force recalculation of coordinates
+                img.setCoords();
+                img.set('dirty', true);
+                img.set('objectCaching', prevCaching);
+
+                this.canvas.renderAll();
+                this.saveState();
+            } catch (e) {
+                console.error('Filter application failed', e);
+                img.set('objectCaching', prevCaching);
+                this.notificationService.error('Could not apply filter');
+            }
+        }
+    }
+
+    setBrightness(value: number): void {
+        this.applyManualFilter('Brightness', new fabric.filters.Brightness({ brightness: value }));
+    }
+
+    setContrast(value: number): void {
+        this.applyManualFilter('Contrast', new fabric.filters.Contrast({ contrast: value }));
+    }
+
+    setSaturation(value: number): void {
+        this.applyManualFilter('Saturation', new fabric.filters.Saturation({ saturation: value }));
+    }
+
+    private applyManualFilter(type: string, filter: any): void {
+        const obj = this.canvas.getActiveObject();
+        if (obj && obj.type === 'image') {
+            const img = obj as fabric.Image;
+
+            // Save COMPREHENSIVE state
+            const state = {
+                width: img.width,
+                height: img.height,
+                scaleX: img.scaleX,
+                scaleY: img.scaleY,
+                left: img.left,
+                top: img.top,
+                cropX: img.cropX,
+                cropY: img.cropY,
+                angle: img.angle,
+                flipX: img.flipX,
+                flipY: img.flipY,
+                skewX: img.skewX,
+                skewY: img.skewY
+            };
+
+            const prevCaching = img.objectCaching;
+            img.set('objectCaching', false);
+
+            try {
+                // Ensure crossOrigin is set
+                if ((img as any).crossOrigin !== 'anonymous') {
+                    img.set({ crossOrigin: 'anonymous' });
+                }
+
+                // Clean existing filter of same type
+                img.filters = (img.filters || []).filter(f => (f as any).type !== type);
+                // Add new
+                img.filters.push(filter);
+
+                img.applyFilters();
+
+                // CRITICAL: Force Restore
+                img.set(state);
+
+                img.setCoords();
+                img.set('dirty', true);
+                img.set('objectCaching', prevCaching);
+
+                this.canvas.requestRenderAll();
+
+                // Debounced save to prevent history flooding
+                this.debouncedSave();
+            } catch (e) {
+                console.error(`Failed to set ${type}`, e);
+                img.set('objectCaching', prevCaching);
+            }
+        }
+    }
 
     async initCanvas(canvasId: string): Promise<void> {
         this.updateMobileState();
@@ -108,8 +264,12 @@ export class BannerService {
         let height = 675;
 
         if (typeof window !== 'undefined') {
-            if (window.innerWidth <= 1024) {
-                width = window.innerWidth - 20;
+            // Calculate available width by subtracting sidebars
+            // Nav sidebar (72px) + Right Sidebar (~350px) + Padding (~40px)
+            const availableWidth = window.innerWidth - (this.isMobile() ? 20 : 450);
+
+            if (availableWidth < 1200) {
+                width = Math.max(300, availableWidth);
                 height = width * (675 / 1200);
             }
         }
@@ -170,11 +330,16 @@ export class BannerService {
 
     private handleResize(): void {
         if (!this.canvas) return;
+        const isMobile = window.innerWidth < 768;
         this.updateMobileState();
 
+        // Dynamic width calculation for all screen sizes (including small laptops)
+        const sidebarsWidth = isMobile ? 20 : 450;
         let width = 1200;
-        if (window.innerWidth <= 1024) {
-            width = window.innerWidth - 20;
+        const availableWidth = window.innerWidth - sidebarsWidth;
+
+        if (availableWidth < 1200) {
+            width = Math.max(300, availableWidth);
         }
 
         const height = width * (675 / 1200);
@@ -301,13 +466,19 @@ export class BannerService {
 
     private setupKeyboardEvents(): void {
         window.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-                if (e.shiftKey) this.redo();
-                else this.undo();
+            // Ignore if input/textarea is focused
+            if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
                 e.preventDefault();
-            } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                if (e.shiftKey) {
+                    this.redo();
+                } else {
+                    this.undo();
+                }
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                e.preventDefault();
                 this.redo();
-                e.preventDefault();
             }
         });
     }
@@ -509,52 +680,124 @@ export class BannerService {
         this.updateObjectsState();
     }
 
+    /** Sync the canUndo/canRedo signals with current history pointer */
+    private updateHistorySignals(): void {
+        this.canUndo.set(this.historyStep > 0);
+        this.canRedo.set(this.historyStep < this.history.length - 1);
+    }
+
     // private saveState(): void { // Old implementation removed for autosave version }
 
     async undo(): Promise<void> {
-        if (this.historyStep > 0) {
-            clearTimeout(this.timeoutId);
-            this.isHistoryLoading = true;
+        if (!this.canUndo() || this.isHistoryLoading) return;
+
+        clearTimeout(this.timeoutId);
+        this.isHistoryLoading = true;
+
+        try {
             this.historyStep--;
             const stateJson = this.history[this.historyStep];
-            try {
+
+            if (stateJson) {
                 let state = JSON.parse(stateJson);
                 state = this.strictSanitize(state);
-                // Ensure state is restored from IDB if it contains indexeddb refs
+
+                this.canvas.discardActiveObject();
+
+                // Restore canvas dimensions
+                if (state.width && state.height) {
+                    this.canvas.setDimensions({ width: state.width, height: state.height });
+                    this.canvas.requestRenderAll();
+                }
+
+                this.canvas.clear();
+
+                // Restore IDB references
                 await this.restoreImagesFromStorage(state);
 
                 await this.canvas.loadFromJSON(state);
-                this.canvas.renderAll();
+
                 this.refreshState();
-                this.isHistoryLoading = false;
-            } catch (err) {
-                console.error('Undo failed', err);
-                this.isHistoryLoading = false;
+                this.canvas.renderAll();
+                this.selectedObject.set(null);
+
+                this.notificationService.showToast('Undo Applied', 'info', 2000);
             }
+        } catch (err) {
+            console.error('Undo failed', err);
+            this.historyStep++; // Revert
+            this.notificationService.error('Undo failed');
+        } finally {
+            this.isHistoryLoading = false;
+            this.updateHistorySignals();
         }
     }
 
     async redo(): Promise<void> {
-        if (this.historyStep < this.history.length - 1) {
-            clearTimeout(this.timeoutId);
-            this.isHistoryLoading = true;
+        if (!this.canRedo() || this.isHistoryLoading) return;
+
+        clearTimeout(this.timeoutId);
+        this.isHistoryLoading = true;
+
+        try {
             this.historyStep++;
             const stateJson = this.history[this.historyStep];
-            try {
+
+            if (stateJson) {
                 let state = JSON.parse(stateJson);
                 state = this.strictSanitize(state);
-                // Ensure state is restored from IDB if it contains indexeddb refs
+
+                this.canvas.discardActiveObject();
+
+                // Restore canvas dimensions
+                if (state.width && state.height) {
+                    this.canvas.setDimensions({ width: state.width, height: state.height });
+                    this.canvas.requestRenderAll();
+                }
+
+                this.canvas.clear();
+
                 await this.restoreImagesFromStorage(state);
 
                 await this.canvas.loadFromJSON(state);
-                this.canvas.renderAll();
+
                 this.refreshState();
-                this.isHistoryLoading = false;
-            } catch (err) {
-                console.error('Redo failed', err);
-                this.isHistoryLoading = false;
+                this.canvas.renderAll();
+                this.selectedObject.set(null);
+
+                this.notificationService.showToast('Redo Applied', 'info', 2000);
             }
+        } catch (err) {
+            console.error('Redo failed', err);
+            this.historyStep--; // Revert
+            this.notificationService.error('Redo failed');
+        } finally {
+            this.isHistoryLoading = false;
+            this.updateHistorySignals();
         }
+    }
+
+    // Safe Canvas Clearing helper
+    private safeClear() {
+        this.canvas.discardActiveObject();
+        this.canvas.getObjects().forEach(o => this.canvas.remove(o));
+        this.canvas.clear();
+        this.canvas.backgroundColor = '#ffffff';
+        this.canvas.renderAll();
+    }
+
+    /**
+     * Start a completely fresh design/template
+     */
+    public createNewDesign() {
+        this.safeClear();
+        this.activeTemplateId.set(null);
+        this.activeProjectId.set(null);
+        this.history = [];
+        this.historyStep = -1;
+        this.updateHistorySignals();
+        this.setInitialGradient();
+        this.notificationService.showToast('New Canvas Ready', 'info', 2000);
     }
 
 
@@ -699,6 +942,9 @@ export class BannerService {
 
             imgObj.onload = () => {
                 const img = new fabric.Image(imgObj);
+                // Explicitly set crossOrigin to support filters on this object
+                img.set({ crossOrigin: 'anonymous' });
+
                 (img as any).idbId = idbId;
 
                 // Track original source immediately for future "restore original" or high-res export
@@ -820,32 +1066,36 @@ export class BannerService {
             }
         } else if (url.startsWith('blob:') || (url.startsWith('http') && !url.includes(location.host))) {
             try {
-                const response = await fetch(url, { mode: 'no-cors' }); // Attempt no-cors if standard fails
-                let blob: Blob;
+                let blob: Blob | null = null;
 
                 try {
                     const corsResponse = await fetch(url);
-                    if (!corsResponse.ok) throw new Error('CORS fetch failed');
+                    if (!corsResponse.ok) throw new Error('Fetch failed');
                     blob = await corsResponse.blob();
                 } catch (corsErr) {
-                    console.warn('CORS fetch failed, attempting canvas capture fallback for offload');
-                    // If fetch fails, the last resort is a canvas capture if it's already rendered
-                    // For now, we return the URL if it's http, but if it's blob, it MUST be squashed if we can't fetch it
-                    if (url.startsWith('http')) return url;
-                    throw new Error('Could not fetch blob source');
+                    console.warn('[offloadUrl] Standard fetch failed for:', url);
+                    // CRITICAL FIX: For blob URLs, attempt canvas-capture fallback
+                    // Look for a canvas object using this URL and capture it
+                    if (url.startsWith('blob:')) {
+                        blob = await this.captureImageBlobFromCanvas(url);
+                    }
+                    if (!blob && url.startsWith('http')) return url;
+                    if (!blob) {
+                        console.error('[offloadUrl] All capture methods failed for blob URL');
+                        return url; // Keep original to prevent data loss
+                    }
                 }
 
-                const id = await this.imageStorage.saveImage(blob);
-                await this.persistenceService.saveImage(id, blob);
-                console.log(`Offloaded URL to IDB:`, id);
-                return `indexeddb://${id}`;
-            } catch (e) {
-                console.error('Failed to offload URL', url, e);
-                if (url.startsWith('blob:')) {
-                    console.warn('⚠️ OFF-LOAD FAILED: Keeping original blob URL to prevent immediate data loss', url);
-                    return url;
+                if (blob) {
+                    const id = await this.imageStorage.saveImage(blob);
+                    await this.persistenceService.saveImage(id, blob);
+                    console.log(`[offloadUrl] Offloaded URL to IDB:`, id);
+                    return `indexeddb://${id}`;
                 }
-                return url; // Keep http URL as is
+                return url;
+            } catch (e) {
+                console.error('[offloadUrl] Failed to offload URL', url, e);
+                return url; // Keep original to prevent data loss
             }
         }
         return url;
@@ -871,8 +1121,10 @@ export class BannerService {
     }
 
 
+
+
     // Template Management
-    async saveTemplate(name: string, category: string = 'Template'): Promise<boolean> {
+    async saveTemplate(name: string, category: string = 'Template', forceNew: boolean = false): Promise<boolean> {
         // 1. Deselect everything to avoid saving selection handles/borders in thumbnail
         this.canvas.discardActiveObject();
         this.canvas.requestRenderAll();
@@ -890,9 +1142,10 @@ export class BannerService {
         await this.processImagesForStorage(json);
 
         // 3. Generate clean thumbnail BEFORE any modifications
+        // OPTIMIZATION: Reduced multiplier and quality for "infinite" storage support
         const thumbnail = this.canvas.toDataURL({
             format: 'jpeg',
-            multiplier: 0.2,
+            multiplier: 0.15,
             quality: 0.7,
             enableRetinaScaling: false
         });
@@ -902,33 +1155,40 @@ export class BannerService {
         // and keep only metadata in the listing.
         const allSaved = await this.imageStorage.getTemplates();
         const activeId = this.activeTemplateId();
-        const existingIndex = allSaved.findIndex(t => t.id === activeId && t.isCustom);
+
+        // LOGIC: If forceNew is true, we ALWAYS create a new entry.
+        // Otherwise, we try to update ONLY if the activeId exists AND matches the current intention.
+        const existingIndex = forceNew ? -1 : allSaved.findIndex(t => t.id === activeId && t.isCustom);
 
         let updatedTemplates: Template[];
         let targetId: string;
 
-        if (existingIndex !== -1 && activeId && allSaved[existingIndex].name === name) {
+        if (existingIndex !== -1 && activeId) {
             targetId = activeId;
             updatedTemplates = [...allSaved];
             updatedTemplates[existingIndex] = {
                 ...updatedTemplates[existingIndex],
-                json: null, // Wipe JSON from listing to save space
+                name: name,
+                json: null,
                 thumbnail,
-                category,
+                category, // Update category if it changed
                 date: new Date()
             };
+            console.log(`[Library] Updating existing item: ${targetId} (${name})`);
         } else {
-            targetId = Date.now().toString();
+            // Force unique ID for new saves
+            targetId = 'tpl_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
             const newTemplate: Template = {
                 id: targetId,
                 name,
                 category,
-                json: null, // Wipe JSON from listing
+                json: null,
                 thumbnail,
                 isCustom: true,
                 date: new Date()
             };
-            updatedTemplates = [...allSaved, newTemplate];
+            updatedTemplates = [newTemplate, ...allSaved];
+            console.log(`[Library] Creating NEW item: ${targetId} (${name})`);
         }
 
         // 5. Save the actual payload to the professional shadow store
@@ -939,20 +1199,12 @@ export class BannerService {
         // REMOVED destructive sanitization that was causing items to disappear if offload lagged
         // If an image stays as blob:, it's better than becoming "" (invisible)
 
-        console.log(`[Save Template] Saving metadata listing with ${updatedTemplates.length} templates`);
+        console.log(`[Library] Saving library with ${updatedTemplates.length} entries.`);
         if (await this.saveTemplatesToStorage(updatedTemplates)) {
-            console.log('[Save Template] ✅ Metadata listing saved successfully');
-            // Reload all signals to keep UI in sync
+            // Force immediate reload of all signals
             await this.initSavedTemplates();
-
-            // If it was a new template, switch ID
-            if (existingIndex === -1) {
-                const newId = updatedTemplates[updatedTemplates.length - 1].id;
-                this.activeTemplateId.set(newId);
-                console.log(`[Save Template] Set active template ID to: ${newId}`);
-            }
-
-            this.notificationService.success(`Template "${name}" saved successfully!`);
+            this.activeTemplateId.set(targetId);
+            this.notificationService.success(`${category} "${name}" saved!`);
             return true;
         }
         console.error('[Save Template] ❌ Failed to save metadata listing');
@@ -980,32 +1232,44 @@ export class BannerService {
 
     private async initSavedTemplates(): Promise<void> {
         try {
-            console.log('🔄 Initializing saved templates...');
-            let saved = await this.imageStorage.getTemplates();
-            console.log(`📦 Fetched ${saved?.length || 0} items from storage`);
+            console.log('🔄 Library Sync: Starting persistence initialization...');
+            let local = await this.imageStorage.getTemplates();
+            if (!Array.isArray(local)) local = [];
 
-            // Sort by date descending so newest appear first
-            saved = (saved || []).sort((a: any, b: any) => {
+            let allItems: Template[] = [...local];
+
+            // Load Globals
+            try {
+                const response = await fetch('/ready_made_templates.json');
+                if (response.ok) {
+                    const globals = await response.json();
+                    if (Array.isArray(globals)) {
+                        const localIds = new Set(local.map(t => t.id));
+                        const uniqueGlobals = globals.filter(t => !localIds.has(t.id));
+                        uniqueGlobals.forEach(t => t.isCustom = false);
+                        allItems = [...allItems, ...uniqueGlobals];
+                    }
+                }
+            } catch (err) { /* silent */ }
+
+            // Unified filter and sort
+            allItems = allItems.filter(t => t && t.id);
+            allItems.sort((a, b) => {
                 const dateB = b.date ? new Date(b.date).getTime() : 0;
                 const dateA = a.date ? new Date(a.date).getTime() : 0;
                 return dateB - dateA;
             });
 
-            // Traditional templates
-            const templates = saved.filter(t => !t.category || t.category === 'Template' || t.category === 'Custom' || t.category === 'Imported');
-            this.savedTemplates.set(templates);
+            // Distribute to signals with broad filters
+            this.savedTemplates.set(allItems.filter(t =>
+                !t.category || t.category === 'Template' || t.category === 'Custom' || t.category === 'Imported'
+            ));
+            this.savedDesigns.set(allItems.filter(t => t.category === 'Design'));
+            this.savedBackgrounds.set(allItems.filter(t => t.category === 'Background'));
 
-            // Designs
-            const designs = saved.filter(t => t.category === 'Design');
-            this.savedDesigns.set(designs);
-
-            // Backgrounds
-            const backgrounds = saved.filter(t => t.category === 'Background');
-            this.savedBackgrounds.set(backgrounds);
-
-            console.log(`✅ Signals updated: Templates: ${templates.length}, Designs: ${designs.length}, BGs: ${backgrounds.length}`);
+            console.log(`✅ Library Sync Complete: Total: ${allItems.length}`);
         } catch (e) {
-            console.error('❌ Failed to load templates', e);
+            console.error('❌ Library failure', e);
         }
     }
 
@@ -1342,7 +1606,7 @@ export class BannerService {
                 this.historyStep = 0;
 
                 this.isProjectLoading.set(false);
-                this.saveState(); // Triggers first autosave after load
+                this.autoSaveProject(); // Update autosave without polluting history
                 console.log('✅ Template load fully complete and signals refreshed');
             }, 100);
 
@@ -1619,6 +1883,41 @@ export class BannerService {
         });
     }
 
+    /**
+     * Canvas-capture fallback: When a blob URL can't be fetched (revoked/dead),
+     * find the corresponding canvas image element and draw it to get the data.
+     */
+    private async captureImageBlobFromCanvas(blobUrl: string): Promise<Blob | null> {
+        try {
+            const objs = this.canvas.getObjects();
+            for (const obj of objs) {
+                if (obj.type === 'image') {
+                    const imgObj = obj as fabric.Image;
+                    const element = (imgObj as any)._element || (imgObj as any).getElement?.();
+                    if (element && (element.src === blobUrl || (imgObj as any).src === blobUrl)) {
+                        // Found the image on canvas, capture its pixels
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = element.naturalWidth || element.width || 300;
+                        tempCanvas.height = element.naturalHeight || element.height || 300;
+                        const ctx = tempCanvas.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(element, 0, 0);
+                            return new Promise<Blob | null>((resolve) => {
+                                tempCanvas.toBlob((blob) => {
+                                    resolve(blob);
+                                }, 'image/png');
+                            });
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error('[captureImageBlobFromCanvas] Failed:', e);
+            return null;
+        }
+    }
+
     private cleanupBlobUrls(): void {
         // Revoke old blob URLs to free memory
         console.log('Cleaning up', this.activeBlobUrls.length, 'blob URLs');
@@ -1823,20 +2122,7 @@ export class BannerService {
         }
     }
 
-    applyFilter(filterType: 'Grayscale' | 'Invert' | 'Sepia' | 'None'): void {
-        const activeObject = this.canvas.getActiveObject();
-        if (activeObject && activeObject.type === 'image') {
-            const img = activeObject as fabric.Image;
-            img.filters = [];
-            if (filterType === 'Grayscale') img.filters.push(new fabric.filters.Grayscale());
-            else if (filterType === 'Invert') img.filters.push(new fabric.filters.Invert());
-            else if (filterType === 'Sepia') img.filters.push(new fabric.filters.Sepia());
 
-            img.applyFilters();
-            this.canvas.renderAll();
-            this.saveState();
-        }
-    }
 
     applyImageMask(type: 'none' | 'cloud' | 'wave' | 'organic', maskHeight: number = 20, flip: boolean = false): void {
         const obj = this.canvas.getActiveObject();
@@ -1936,39 +2222,7 @@ export class BannerService {
         }
     }
 
-    setBrightness(value: number): void {
-        const obj = this.canvas.getActiveObject();
-        if (obj && obj.type === 'image') {
-            const img = obj as fabric.Image;
-            // Remove existing brightness if any
-            img.filters = img.filters.filter(f => (f as any).type !== 'Brightness');
-            img.filters.push(new fabric.filters.Brightness({ brightness: value }));
-            img.applyFilters();
-            this.canvas.renderAll();
-        }
-    }
 
-    setContrast(value: number): void {
-        const obj = this.canvas.getActiveObject();
-        if (obj && obj.type === 'image') {
-            const img = obj as fabric.Image;
-            img.filters = img.filters.filter(f => (f as any).type !== 'Contrast');
-            img.filters.push(new fabric.filters.Contrast({ contrast: value }));
-            img.applyFilters();
-            this.canvas.renderAll();
-        }
-    }
-
-    setSaturation(value: number): void {
-        const obj = this.canvas.getActiveObject();
-        if (obj && obj.type === 'image') {
-            const img = obj as fabric.Image;
-            img.filters = img.filters.filter(f => (f as any).type !== 'Saturation');
-            img.filters.push(new fabric.filters.Saturation({ saturation: value }));
-            img.applyFilters();
-            this.canvas.renderAll();
-        }
-    }
 
     setGradientBg(c1: string, c2: string): void {
         this.bgType.set('gradient');
@@ -2543,14 +2797,37 @@ export class BannerService {
     }
 
     // Autosave Logic
+    // CRITICAL FIX: Reuse the already-stable history state (which has indexeddb:// refs)
+    // instead of re-serializing from canvas (which has live blob: URLs that can fail to offload).
     private async autoSaveProject(): Promise<void> {
         try {
-            const json = this.canvas.toObject(this.SERIALIZE_PROPS);
+            // Use the latest history entry which already has stable indexeddb:// refs
+            // thanks to forceStableRefs() in saveState()
+            let stableJson: string | null = null;
 
-            // Critical: process images before saving to IDB to ensure persistence
-            await this.processImagesForStorage(json);
+            if (this.history.length > 0 && this.historyStep >= 0 && this.historyStep < this.history.length) {
+                stableJson = this.history[this.historyStep];
+            }
 
-            await this.imageStorage.saveAutosave(JSON.stringify(json));
+            if (stableJson) {
+                // The history entry already has indexeddb:// refs.
+                // We parse it, run processImagesForStorage to ensure any remaining
+                // non-indexeddb refs are offloaded, then save.
+                const jsonObj = JSON.parse(stableJson);
+                await this.processImagesForStorage(jsonObj);
+                await this.imageStorage.saveAutosave(JSON.stringify(jsonObj));
+            } else {
+                // Fallback: serialize from canvas and process
+                const json = this.canvas.toObject(this.SERIALIZE_PROPS);
+
+                // Add dimensions for accurate fallback
+                (json as any).width = this.canvas.width;
+                (json as any).height = this.canvas.height;
+
+                this.forceStableRefs(json);
+                await this.processImagesForStorage(json);
+                await this.imageStorage.saveAutosave(JSON.stringify(json));
+            }
         } catch (e) {
             console.warn('Autosave failed', e);
         }
@@ -2588,6 +2865,7 @@ export class BannerService {
 
                 this.isHistoryLoading = false;
                 this.isProjectLoading.set(false);
+                this.updateHistorySignals();
             }
         } catch (e) {
             console.warn('No autosave found or failed to load', e);
@@ -2644,6 +2922,7 @@ export class BannerService {
             this.notificationService.success('Project loaded');
             this.isProjectLoading.set(false);
             this.isHistoryLoading = false;
+            this.updateHistorySignals();
             console.log('✅ Template/Project loaded successfully');
         } catch (err) {
             console.error('Failed to load template/project', err);
@@ -2660,15 +2939,38 @@ export class BannerService {
 
         const obj = this.canvas.toObject(this.SERIALIZE_PROPS);
 
-        // Sync pass for history stability: 
-        // Force indexeddb:// refs for any object that already has an IDB link.
-        // This makes history states immune to session blob expiration.
-        this.forceStableRefs(obj);
+        // CRITICAL: Save canvas dimensions in history state
+        (obj as any).width = this.canvas.width;
+        (obj as any).height = this.canvas.height;
 
+        this.forceStableRefs(obj);
         const json = JSON.stringify(obj);
-        this.historyStep++;
-        this.history = this.history.slice(0, this.historyStep);
+
+        // Prevent duplicate states
+        if (this.history.length > 0 && this.historyStep >= 0) {
+            const currentState = this.history[this.historyStep];
+            if (currentState === json) return; // No change
+        }
+
+        // Branching history
+        if (this.historyStep < this.history.length - 1) {
+            this.history = this.history.slice(0, this.historyStep + 1);
+        }
+
         this.history.push(json);
+
+        // Limit history size
+        if (this.history.length > this.MAX_HISTORY) {
+            this.history.shift();
+        } else {
+            this.historyStep++;
+        }
+
+        // Fix step pointer if we shifted
+        this.historyStep = Math.min(this.historyStep, this.history.length - 1);
+
+        // Update UI signals
+        this.updateHistorySignals();
 
         // Debounced Autosave (1s)
         clearTimeout(this.timeoutId);
@@ -2685,10 +2987,21 @@ export class BannerService {
 
         if (obj.idbId) {
             if (obj.type === 'image') obj.src = `indexeddb://${obj.idbId}`;
-            // Handle originalSrc if it exists
-            if (obj.originalSrc && (obj.originalSrc.startsWith('blob:') || obj.originalSrc.startsWith('http'))) {
-                // Try to keep it as IDB ref if possible
-                if (obj.idbId) obj.originalSrc = `indexeddb://${obj.idbId}`;
+            // Handle originalSrc: Only override if it's a dead blob/http URL.
+            // If originalSrc already points to a different IDB entry (e.g. for bg-removed images),
+            // respect it — don't overwrite with the current idbId.
+            if (obj.originalSrc && typeof obj.originalSrc === 'string') {
+                if (obj.originalSrc.startsWith('blob:') || obj.originalSrc.startsWith('http')) {
+                    // Only use idbId as fallback if there's no separate originalSrc IDB ref
+                    obj.originalSrc = `indexeddb://${obj.idbId}`;
+                }
+                // If already indexeddb://, leave it as-is (it may point to the original pre-bg-removal image)
+            }
+            // Same for originalImageSrc
+            if (obj.originalImageSrc && typeof obj.originalImageSrc === 'string') {
+                if (obj.originalImageSrc.startsWith('blob:') || obj.originalImageSrc.startsWith('http')) {
+                    obj.originalImageSrc = `indexeddb://${obj.idbId}`;
+                }
             }
         }
 
@@ -2726,7 +3039,11 @@ export class BannerService {
         this.canvas.discardActiveObject();
         this.canvas.requestRenderAll();
 
-        const json = this.canvas.toObject(this.SERIALIZE_PROPS);
+        const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
+        // CRITICAL FIX: Deep-clone before processing to avoid mutating live canvas objects
+        const json = JSON.parse(JSON.stringify(rawJson));
+        // Force stable indexeddb:// refs before offloading
+        this.forceStableRefs(json);
         // Save dimensions for accurate restoration
         (json as any).width = this.canvas.width;
         (json as any).height = this.canvas.height;
@@ -2745,21 +3062,32 @@ export class BannerService {
         let targetId: string;
 
         if (activeId) {
-            targetId = activeId;
-            const existing = current.find(p => p.id === activeId);
-            const others = current.filter(p => p.id !== activeId);
+            const existingIndex = current.findIndex(p => p.id === activeId);
 
-            if (existing) {
-                const updatedProject = {
-                    ...existing,
-                    name: name || existing.name,
+            if (existingIndex !== -1) {
+                targetId = activeId;
+                // Safe Update
+                // We create a new array and a new object for the updated project
+                updated = [...current];
+                updated[existingIndex] = {
+                    ...updated[existingIndex],
+                    name: name || updated[existingIndex].name,
                     json: '', // Shadow storage
                     thumbnail,
                     date: Date.now()
                 };
-                updated = [updatedProject, ...others];
             } else {
-                updated = current;
+                // If activeId not found (rare), treat as new
+                targetId = Date.now().toString();
+                const newProject: SavedProject = {
+                    id: targetId,
+                    name,
+                    json: '',
+                    thumbnail,
+                    date: Date.now()
+                };
+                updated = [newProject, ...current];
+                this.activeProjectId.set(targetId);
             }
         } else {
             targetId = Date.now().toString();
@@ -2847,6 +3175,7 @@ export class BannerService {
                 this.forceStableRefs(historyObj);
                 this.history = [JSON.stringify(historyObj)];
                 this.historyStep = 0;
+                this.updateHistorySignals();
 
                 console.log(`Design ${id} loaded with high-fidelity accuracy.`);
             } else {
@@ -3041,5 +3370,37 @@ export class BannerService {
         // Debounce or only save state on slider end in real production, 
         // but for this task we add it here.
         this.saveState();
+    }
+
+    /**
+     * Helper for the user to export their currently saved templates from IndexedDB
+     * so they can be committed to the repository and used as Global Templates.
+     */
+    public async exportAllTemplatesToJSON(): Promise<void> {
+        const templates = await this.imageStorage.getTemplates();
+        const exportData = [];
+
+        for (const t of templates) {
+            // Fetch deep payload from shadow storage
+            const designData = await this.persistenceService.getDesign(t.id);
+            exportData.push({
+                ...t,
+                json: designData || t.json // Ensure the full Fabric.js JSON is included
+            });
+        }
+
+        const json = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'ready_made_templates.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        this.notificationService.success('Templates exported! Save this file as "public/ready_made_templates.json" to include it in deployment.');
     }
 }

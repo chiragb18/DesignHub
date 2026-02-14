@@ -36,33 +36,71 @@ $text-sub: #6b7280;
 .brand-logo {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     cursor: pointer;
+    transition: transform 0.2s ease;
 
-    .logo-icon-box {
+    &:hover {
+        transform: scale(1.02);
+
+        .logo-glow {
+            opacity: 0.6;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+
+        .main-logo-img {
+            transform: rotate(-5deg);
+        }
+    }
+
+    .logo-wrapper {
+        position: relative;
         width: 36px;
         height: 36px;
-        background: linear-gradient(135deg, $primary, $primary-hover);
-        color: white;
-        border-radius: 10px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-family: 'Outfit', sans-serif;
-        font-weight: 800;
-        font-size: 20px;
-        box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.2);
+
+        .main-logo-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 2;
+            filter: drop-shadow(0 4px 6px rgba(124, 58, 237, 0.25));
+        }
+
+        .logo-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(139, 92, 246, 0) 70%);
+            border-radius: 50%;
+            opacity: 0;
+            transition: all 0.4s ease;
+            z-index: 1;
+        }
     }
 
     .brand-name {
         font-family: 'Outfit', sans-serif;
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 22px;
+        font-weight: 800;
         color: $text-main;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
+        display: flex;
+        align-items: center;
 
         span {
             color: $primary;
+            background: linear-gradient(135deg, #7c3aed, #2563eb);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
     }
 }
@@ -101,14 +139,17 @@ $text-sub: #6b7280;
     gap: 8px;
     background: transparent;
     border: none;
-    border-radius: 10px;
+    border-radius: 12px;
     color: $text-sub;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
+    position: relative;
+    overflow: hidden;
 
     .material-symbols-outlined {
         font-size: 20px;
+        transition: transform 0.2s ease;
     }
 
     .tool-label {
@@ -119,6 +160,23 @@ $text-sub: #6b7280;
     &:hover:not(:disabled) {
         background: #f1f5f9;
         color: $text-main;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+        .material-symbols-outlined {
+            transform: scale(1.1);
+        }
+    }
+
+    &:active:not(:disabled) {
+        transform: translateY(0);
+        box-shadow: none;
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        filter: grayscale(100%);
     }
 
     &.active {

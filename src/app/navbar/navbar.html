@@ -2,7 +2,10 @@
     <!-- Left Section: Logo & Branding -->
     <div class="toolbar-left">
         <div class="brand-logo">
-            <div class="logo-icon-box">D</div>
+            <div class="logo-wrapper">
+                <img src="designHub-logo.png" alt="DesignHub Logo" class="main-logo-img">
+                <div class="logo-glow"></div>
+            </div>
             <div class="brand-name">Design<span>Hub</span></div>
         </div>
     </div>
@@ -25,70 +28,7 @@
 
         <!-- Standard Tools (Hidden when cropping) -->
         <div class="tool-group horizontal" *ngIf="!isCropping">
-            <!-- Canvas Size Selector -->
-            <div class="dropdown-wrapper">
-                <button (click)="toggleMenu('canvasSize')" class="nav-tool-btn canvas-size-btn"
-                    [class.active]="activeMenu === 'canvasSize'" title="Canvas Size">
-                    <span class="material-symbols-outlined">aspect_ratio</span>
-                    <span class="size-label">{{ canvasWidth }} &times; {{ canvasHeight }} px</span>
-                    <span class="material-symbols-outlined arrow">expand_more</span>
-                </button>
 
-                <!-- Canvas Size Panel -->
-                <div class="dropdown-menu canvas-size-panel" *ngIf="activeMenu === 'canvasSize'"
-                    (click)="$event.stopPropagation()">
-                    <div class="panel-header">Canvas Size</div>
-
-                    <!-- Presets Grid -->
-                    <div class="presets-grid">
-                        <button *ngFor="let p of presets" class="preset-card" (click)="setCanvasSize(p.width, p.height)"
-                            [class.active]="canvasWidth === p.width && canvasHeight === p.height">
-                            <span class="material-symbols-outlined">{{ p.icon }}</span>
-                            <div class="preset-info">
-                                <span class="preset-name">{{ p.name }}</span>
-                                <span class="preset-dim">{{ p.width }} &times; {{ p.height }}</span>
-                            </div>
-                        </button>
-                    </div>
-
-                    <div class="divider-horiz"></div>
-
-                    <!-- Custom Size -->
-                    <div class="custom-size-section">
-                        <div class="section-title">Custom Size</div>
-                        <div class="size-inputs">
-                            <div class="input-group">
-                                <label>Width</label>
-                                <input type="number" [ngModel]="canvasWidth" (ngModelChange)="updateCustomWidth($event)"
-                                    class="size-input">
-                            </div>
-
-                            <button class="btn-icon lock-btn" [class.active]="lockRatio" (click)="toggleLock()"
-                                title="Lock Aspect Ratio">
-                                <span class="material-symbols-outlined" *ngIf="lockRatio">lock</span>
-                                <span class="material-symbols-outlined" *ngIf="!lockRatio">lock_open</span>
-                            </button>
-
-                            <div class="input-group">
-                                <label>Height</label>
-                                <input type="number" [ngModel]="canvasHeight"
-                                    (ngModelChange)="updateCustomHeight($event)" class="size-input">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Warning & Action -->
-                    <div class="panel-footer">
-                        <div class="warning-text">
-                            <span class="material-symbols-outlined">info</span>
-                            Change may reposition elements
-                        </div>
-                        <button class="btn-primary-sm" (click)="applyCustomSize()">Apply</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="divider"></div>
 
             <button (click)="setSelectMode()" class="nav-tool-btn"
                 [class.active]="!bannerService.isDrawingMode() && !bannerService.isErasing()" title="Select Tool (V)">
@@ -177,10 +117,10 @@
 
     <!-- Right Section: Actions -->
     <div class="toolbar-right" *ngIf="!isCropping">
-        <button (click)="undo()" class="nav-tool-btn" title="Undo (Ctrl+Z)">
+        <button (click)="undo()" class="nav-tool-btn" title="Undo (Ctrl+Z)" [disabled]="!bannerService.canUndo()">
             <span class="material-symbols-outlined">undo</span>
         </button>
-        <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)">
+        <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)" [disabled]="!bannerService.canRedo()">
             <span class="material-symbols-outlined">redo</span>
         </button>
 

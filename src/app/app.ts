@@ -14,9 +14,10 @@ import { MobileToolbarComponent } from './mobile-toolbar/mobile-toolbar';
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
+
 export class App {
   public bannerService = inject(BannerService);
-  protected readonly title = signal('BannerStudio');
+  protected readonly title = signal('DesignHub');
 
   sidebarWidth = 350;
   isResizing = false;

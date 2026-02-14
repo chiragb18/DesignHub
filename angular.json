@@ -32,6 +32,9 @@
             "styles": [
               "src/material-theme.scss",
               "src/styles.css"
+            ],
+            "allowedCommonJsDependencies": [
+              "@indic-transliteration/sanscript"
             ]
           },
           "configurations": {
