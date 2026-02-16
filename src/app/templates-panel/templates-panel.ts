@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, inject, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BannerService, Template } from '../services/banner.service';
 import { MatIconModule } from '@angular/material/icon';
@@ -10,7 +10,8 @@ import { NotificationService } from '../services/notification.service';
     standalone: true,
     imports: [CommonModule, MatIconModule, FormsModule],
     templateUrl: './templates-panel.html',
-    styleUrl: './templates-panel.scss'
+    styleUrl: './templates-panel.scss',
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class TemplatesPanel {
     public bannerService = inject(BannerService);

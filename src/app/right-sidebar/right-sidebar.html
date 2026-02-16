@@ -269,22 +269,61 @@
                     </div>
                 </div>
 
-                <button class="btn-ai-action" (click)="bannerService.removeBackground()"
-                    *ngIf="!bannerService.isRemovingBg() && !currentObject?.isBgRemoved">
-                    <span class="material-symbols-outlined">auto_fix_high</span>
-                    Remove Background
-                </button>
+                <div class="ai-tool-group" *ngIf="!bannerService.isPenCutting()">
+                    <button class="btn-ai-action" (click)="bannerService.removeBackground()"
+                        *ngIf="!bannerService.isRemovingBg() && !currentObject?.isBgRemoved">
+                        <span class="material-symbols-outlined">auto_fix_high</span>
+                        Remove Background
+                    </button>
 
-                <button class="btn-ai-action restore" (click)="bannerService.restoreOriginalImage()"
-                    *ngIf="!bannerService.isRemovingBg() && currentObject?.isBgRemoved">
-                    <span class="material-symbols-outlined">history</span>
-                    Restore Original
-                </button>
+                    <button class="btn-ai-action pen-cut" (click)="bannerService.startPenCut()"
+                        *ngIf="!bannerService.isRemovingBg()">
+                        <span class="material-symbols-outlined">gesture</span>
+                        Pen Cut
+                    </button>
 
-                <div class="divider"></div>
+                    <button class="btn-ai-action restore" (click)="bannerService.restoreOriginalImage()"
+                        *ngIf="!bannerService.isRemovingBg() && currentObject?.isBgRemoved">
+                        <span class="material-symbols-outlined">history</span>
+                        Restore Original
+                    </button>
+                </div>
 
-                <div class="section-title">Transform</div>
-                <div class="tool-row">
+                <!-- Pen Cut Active State -->
+                <div class="pen-cut-actions" *ngIf="bannerService.isPenCutting()">
+                    <div class="pen-cut-header">
+                        <span class="material-symbols-outlined">drawing</span>
+                        <span>Pen Cutting Mode</span>
+                    </div>
+                    <p class="instr">Trace around the object. Drawing automatically closes.</p>
+
+                    <div class="action-grid">
+                        <button class="btn-pen-sub" (click)="bannerService.undoLastPenPath()" title="Undo Last Stroke">
+                            <span class="material-symbols-outlined">undo</span>
+                            Undo Last
+                        </button>
+                        <button class="btn-pen-sub" (click)="bannerService.clearAllPenPaths()" title="Clear All Traces">
+                            <span class="material-symbols-outlined">delete_sweep</span>
+                            Clear All
+                        </button>
+                    </div>
+
+                    <div class="action-row main-actions">
+                        <button class="btn-finish" (click)="bannerService.finishPenCut()">
+                            <span class="material-symbols-outlined">check</span>
+                            Finish Cut
+                        </button>
+                        <button class="btn-cancel" (click)="bannerService.cancelPenCut()">
+                            <span class="material-symbols-outlined">close</span>
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+
+                <div class="divider" *ngIf="!bannerService.isPenCutting()"></div>
+
+                <div class="section-title" *ngIf="!bannerService.isPenCutting()">Transform</div>
+                <div class="tool-row" *ngIf="!bannerService.isPenCutting()">
                     <div class="button-group">
                         <button class="icon-btn" (click)="flip('h')" title="Flip Horizontal">
                             <span class="material-symbols-outlined">flip</span>
@@ -299,10 +338,10 @@
                             (input)="onPropertyChange('angle', angle)">
                     </div>
                 </div>
-                <div class="divider"></div>
+                <div class="divider" *ngIf="!bannerService.isPenCutting()"></div>
             </div>
 
-            <div *ngIf="currentObject?.type === 'image'; else noImageFilter">
+            <div *ngIf="currentObject?.type === 'image' && !bannerService.isPenCutting(); else noImageFilter">
                 <div class="property-card">
                     <div class="section-title">Filter Presets</div>
                     <div class="filters-grid">

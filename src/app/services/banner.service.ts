@@ -83,6 +83,9 @@ export class BannerService {
     public curvedText = signal<number>(0);
     public curvedImage = signal<number>(0);
     public isMobile = signal<boolean>(false);
+    public isPenCutting = signal<boolean>(false);
+    public penCutTarget: fabric.Image | null = null;
+    private currentPenPath: fabric.Path | null = null;
 
     private cropOverlay: fabric.Rect | null = null;
     private cropTarget: fabric.Image | null = null;
@@ -95,7 +98,7 @@ export class BannerService {
     private readonly SERIALIZE_PROPS = [
         'left', 'top', 'width', 'height', 'scaleX', 'scaleY', 'angle',
         'originX', 'originY', 'flipX', 'flipY', 'skewX', 'skewY',
-        'id', 'name', 'idbId', 'originalSrc', 'isBgRemoved', 'excludeFromExport',
+        'id', 'name', 'idbId', 'src', 'originalSrc', 'isBgRemoved', 'excludeFromExport',
         'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip',
         'opacity', 'visible', 'selectable', 'evented', 'lockMovementX', 'lockMovementY',
         'cropX', 'cropY', 'filters', 'clipPath', 'crossOrigin', 'stroke', 'strokeWidth', 'strokeDashArray', 'fill',
@@ -110,19 +113,25 @@ export class BannerService {
     private notificationService = inject(NotificationService);
 
     constructor() {
-        this.debouncedSave = this.debounce(this.saveState.bind(this), 500);
+        this.debouncedSave = this.debounce(this.saveState.bind(this), 300);
+        this.debouncedResize = this.debounce(this.handleResize.bind(this), 100);
+        this.debouncedRefresh = this.debounce(this.refreshState.bind(this), 50);
     }
 
     // ... (InitCanvas and other methods remain) ...
 
     // Manual Adjustment Debouncer
-    private debouncedSave: () => void;
-    private debounce(func: Function, wait: number) {
+    private debouncedSave: (() => void) & { cancel: () => void };
+    private debouncedResize: (() => void) & { cancel: () => void };
+    private debouncedRefresh: (() => void) & { cancel: () => void };
+    private debounce(func: Function, wait: number): (() => void) & { cancel: () => void } {
         let timeout: any;
-        return (...args: any[]) => {
+        const debounced = (...args: any[]) => {
             clearTimeout(timeout);
             timeout = setTimeout(() => func.apply(this, args), wait);
         };
+        (debounced as any).cancel = () => clearTimeout(timeout);
+        return debounced as any;
     }
 
     // ... (Skip to applying filters) ...
@@ -318,7 +327,7 @@ export class BannerService {
         this.saveState();
 
         if (typeof window !== 'undefined') {
-            window.addEventListener('resize', () => this.handleResize());
+            window.addEventListener('resize', () => this.debouncedResize());
         }
     }
 
@@ -328,7 +337,11 @@ export class BannerService {
         }
     }
 
-    private handleResize(): void {
+    /**
+     * Public method to trigger canvas recalculation based on current window size and sidebars.
+     * Useful for manual resizing interactions.
+     */
+    public handleResize(): void {
         if (!this.canvas) return;
         const isMobile = window.innerWidth < 768;
         this.updateMobileState();
@@ -348,10 +361,10 @@ export class BannerService {
         this.canvas.setDimensions({ width, height });
         this.canvas.setZoom(zoom);
         this.zoomLevel.set(zoom);
-        this.canvas.renderAll();
+        this.canvas.requestRenderAll();
     }
 
-    public brushType = signal<'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted'>('pencil');
+    public brushType = signal<'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles'>('pencil');
 
     public toggleDrawingMode(enabled?: boolean): void {
         const currentlyDrawing = enabled !== undefined ? enabled : !this.isDrawingMode();
@@ -369,11 +382,11 @@ export class BannerService {
         this.canvas.renderAll();
     }
 
-    public setBrushType(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted'): void {
+    public setBrushType(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles'): void {
         this.brushType.set(type);
         if (!this.canvas) return;
 
-        let brush;
+        let brush: any;
         const color = this.brushColor();
         const size = this.brushSize();
 
@@ -391,14 +404,50 @@ export class BannerService {
                 break;
             case 'highlighter':
                 brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size * 3;
-                brush.color = color + '80'; // 50% opacity hex
-                // Note: highlighter logic might need pure color handling if not hex
+                brush.width = size * 2.5;
+                brush.color = color + '80'; // 50% opacity
                 break;
             case 'dotted':
                 brush = new fabric.PencilBrush(this.canvas);
                 brush.width = size;
                 brush.strokeDashArray = [size * 2, size * 2];
+                break;
+            case 'glow':
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.shadow = new fabric.Shadow({
+                    color: color,
+                    blur: size * 1.5,
+                    offsetX: 0,
+                    offsetY: 0
+                });
+                break;
+            case 'crayon':
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.strokeLineCap = 'butt';
+                brush.strokeDashArray = [1, 2];
+                // Simulate crayon grain
+                break;
+            case 'ink':
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.decimate = 2; // Smoother
+                break;
+            case 'ribbon':
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size * 2;
+                brush.strokeLineCap = 'square';
+                // Ribbon effect can be simulated with shadow or specific params
+                break;
+            case 'stars':
+                brush = this.createPatternBrush('star');
+                break;
+            case 'hearts':
+                brush = this.createPatternBrush('heart');
+                break;
+            case 'bubbles':
+                brush = this.createPatternBrush('bubble');
                 break;
             case 'pencil':
             default:
@@ -407,29 +456,60 @@ export class BannerService {
                 break;
         }
 
-        if (type !== 'highlighter') {
+        if (type !== 'highlighter' && !['stars', 'hearts', 'bubbles'].includes(type)) {
             brush.color = color;
         }
 
         this.canvas.freeDrawingBrush = brush;
+    }
 
-        // Ensure standard width update for non-special brushes or if needed
-        if (type === 'pencil' || type === 'dotted') {
-            brush.width = size;
-        }
+    private createPatternBrush(shape: 'star' | 'heart' | 'bubble'): any {
+        const size = Math.max(20, this.brushSize() * 2);
+        const color = this.brushColor();
+
+        const patternCanvas = document.createElement('canvas');
+        patternCanvas.width = size;
+        patternCanvas.height = size;
+        const ctx = patternCanvas.getContext('2d')!;
+
+        ctx.fillStyle = color;
+        ctx.font = `${size * 0.8}px serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        let emoji = '★';
+        if (shape === 'heart') emoji = '❤';
+        else if (shape === 'bubble') emoji = '○';
+
+        ctx.fillText(emoji, size / 2, size / 2);
+
+        const brush = new (fabric as any).PatternBrush(this.canvas);
+        brush.source = patternCanvas;
+        brush.width = size;
+        return brush;
     }
 
     public updateBrushSize(size: number): void {
         this.brushSize.set(size);
         if ((this.isDrawingMode() || this.isErasing()) && this.canvas.freeDrawingBrush) {
-            this.canvas.freeDrawingBrush.width = Number(size);
+            const type = this.brushType();
+            if (['stars', 'hearts', 'bubbles'].includes(type) && !this.isErasing()) {
+                this.setBrushType(type);
+            } else {
+                this.canvas.freeDrawingBrush.width = Number(size);
+            }
         }
     }
 
     public updateBrushColor(color: string): void {
         this.brushColor.set(color);
         if (this.isDrawingMode() && this.canvas.freeDrawingBrush && !this.isErasing()) {
-            this.canvas.freeDrawingBrush.color = color;
+            const type = this.brushType();
+            if (['stars', 'hearts', 'bubbles', 'glow'].includes(type)) {
+                this.setBrushType(type);
+            } else {
+                this.canvas.freeDrawingBrush.color = color;
+            }
         }
     }
 
@@ -507,9 +587,13 @@ export class BannerService {
         });
 
         this.canvas.on('path:created', (e: any) => {
+            if (this.isPenCutting()) {
+                this.handlePenCutPath(e.path);
+                return;
+            }
             if (this.isErasing()) {
                 e.path.set({ globalCompositeOperation: 'destination-out' });
-                this.canvas.renderAll();
+                this.canvas.requestRenderAll();
             }
             if (!this.isHistoryLoading) {
                 this.refreshState();
@@ -525,7 +609,7 @@ export class BannerService {
         });
 
         const updateUI = () => {
-            this.refreshState();
+            this.debouncedRefresh();
             this.triggerSelectedUpdate();
         };
 
@@ -534,7 +618,10 @@ export class BannerService {
             if (!this.isHistoryLoading) this.saveState();
         });
 
-        this.canvas.on('object:moving', updateUI);
+        this.canvas.on('object:moving', () => {
+            this.debouncedRefresh();
+            this.triggerSelectedUpdate();
+        });
 
         this.canvas.on('object:scaling', (e) => {
             const obj = e.target;
@@ -546,10 +633,14 @@ export class BannerService {
                     scaleY: 1
                 });
             }
-            updateUI();
+            this.debouncedRefresh();
+            this.triggerSelectedUpdate();
         });
 
-        this.canvas.on('object:rotating', updateUI);
+        this.canvas.on('object:rotating', () => {
+            this.debouncedRefresh();
+            this.triggerSelectedUpdate();
+        });
 
         const handleSelection = (e: any) => {
             const selected = e.selected?.[0] || null;
@@ -691,6 +782,7 @@ export class BannerService {
     async undo(): Promise<void> {
         if (!this.canUndo() || this.isHistoryLoading) return;
 
+        this.debouncedSave.cancel();
         clearTimeout(this.timeoutId);
         this.isHistoryLoading = true;
 
@@ -710,18 +802,19 @@ export class BannerService {
                     this.canvas.requestRenderAll();
                 }
 
-                this.canvas.clear();
-
                 // Restore IDB references
                 await this.restoreImagesFromStorage(state);
 
+                // For smoother transition, only clear if absolutely necessary, 
+                // but loadFromJSON usually handles replacement well.
                 await this.canvas.loadFromJSON(state);
 
+                this.reviveCurvedElements();
                 this.refreshState();
-                this.canvas.renderAll();
+                this.canvas.requestRenderAll();
                 this.selectedObject.set(null);
 
-                this.notificationService.showToast('Undo Applied', 'info', 2000);
+                this.notificationService.showToast('Undo Applied', 'info', 1000);
             }
         } catch (err) {
             console.error('Undo failed', err);
@@ -736,6 +829,7 @@ export class BannerService {
     async redo(): Promise<void> {
         if (!this.canRedo() || this.isHistoryLoading) return;
 
+        this.debouncedSave.cancel();
         clearTimeout(this.timeoutId);
         this.isHistoryLoading = true;
 
@@ -755,17 +849,16 @@ export class BannerService {
                     this.canvas.requestRenderAll();
                 }
 
-                this.canvas.clear();
-
                 await this.restoreImagesFromStorage(state);
 
                 await this.canvas.loadFromJSON(state);
 
+                this.reviveCurvedElements();
                 this.refreshState();
-                this.canvas.renderAll();
+                this.canvas.requestRenderAll();
                 this.selectedObject.set(null);
 
-                this.notificationService.showToast('Redo Applied', 'info', 2000);
+                this.notificationService.showToast('Redo Applied', 'info', 1000);
             }
         } catch (err) {
             console.error('Redo failed', err);
@@ -803,7 +896,7 @@ export class BannerService {
 
     resizeCanvas(width: number, height: number): void {
         this.canvas.setDimensions({ width, height });
-        this.canvas.renderAll();
+        this.canvas.requestRenderAll();
         this.saveState();
     }
 
@@ -825,7 +918,7 @@ export class BannerService {
         this.canvas.add(textbox);
         this.canvas.centerObject(textbox);
         this.canvas.setActiveObject(textbox);
-        this.canvas.renderAll();
+        this.canvas.requestRenderAll();
         this.saveState();
     }
 
@@ -966,9 +1059,7 @@ export class BannerService {
 
     private async processImagesForStorage(json: any) {
         if (json.objects) {
-            for (const obj of json.objects) {
-                await this.offloadObjectImage(obj);
-            }
+            await Promise.all(json.objects.map((obj: any) => this.offloadObjectImage(obj)));
         }
         // Handle Background/Overlay which can be string OR object
         if (json.backgroundImage) {
@@ -993,7 +1084,7 @@ export class BannerService {
         // 0. Priority: If it has an IDB ID, synchronize the main source to point to IndexedDB
         if (obj.idbId) {
             console.log(`[Persistence] Syncing IDB ref: ${obj.idbId} for ${obj.type}`);
-            if (obj.src !== undefined) obj.src = `indexeddb://${obj.idbId}`;
+            if (obj.src !== undefined || obj.type === 'image') obj.src = `indexeddb://${obj.idbId}`;
             // CRITICAL FIX: Do NOT overwrite originalSrc/originalImageSrc with the current idbId.
             // The object might be a derivative (e.g. bg-removed) where idbId is the cutout, 
             // but originalSrc must point to the separate original file.
@@ -1040,9 +1131,7 @@ export class BannerService {
 
         // 4. Recursively handle groups
         if (obj.objects) {
-            for (const child of obj.objects) {
-                await this.offloadObjectImage(child);
-            }
+            await Promise.all(obj.objects.map((child: any) => this.offloadObjectImage(child)));
         }
     }
 
@@ -1303,7 +1392,6 @@ export class BannerService {
             this.bgRemovalProgress.set(0);
             this.bgRemovalStatus.set('Loading AI engine...');
 
-            // 1. OPTIMIZED CACHING: Only import the module once to save initialization time
             if (!this.rbFunctionCache) {
                 this.bgRemovalStatus.set('Initializing AI engine...');
                 const imglyModule = await import('@imgly/background-removal');
@@ -1315,9 +1403,8 @@ export class BannerService {
                 throw new Error('Background removal function not found in loaded module.');
             }
 
-            // 2. STABLE & FAST CONFIG
-            const config: Config = {
-                progress: (key, current, total) => {
+            const config: any = {
+                progress: (key: string, current: number, total: number) => {
                     const percent = Math.round((current / total) * 100);
                     this.bgRemovalProgress.set(percent);
 
@@ -1329,22 +1416,15 @@ export class BannerService {
                         this.bgRemovalStatus.set(`Processing... ${percent}%`);
                     }
                 },
-                // Use 'isnet_fp16' for ~2x speedup. It's half the size (40MB vs 80MB) 
-                // and optimized for modern GPUs while maintaining high accuracy.
                 model: 'isnet_fp16',
                 output: {
                     format: 'image/png',
                     quality: 0.8
                 },
-                // Keep proxyToWorker false if COOP/COEP isolation is not configured,
-                // but setting resolution explicitly can sometimes speed up processing.
                 proxyToWorker: false
             };
 
-            // 3. EXECUTE REMOVAL
-            // Pass the source URL/Blob directly for best reliability
             const resultBlob = await rbFunction(originalSrc || imgElement, config);
-
             const resultUrl = URL.createObjectURL(resultBlob);
             const imgObj = new Image();
             imgObj.src = resultUrl;
@@ -1352,7 +1432,6 @@ export class BannerService {
             imgObj.onload = async () => {
                 const newImg = new fabric.Image(imgObj);
 
-                // Copy properties accurately
                 const props = [
                     'left', 'top', 'scaleX', 'scaleY', 'angle',
                     'originX', 'originY', 'flipX', 'flipY',
@@ -1402,6 +1481,236 @@ export class BannerService {
         }
     }
 
+    // --- PEN CUT (MANUAL BG REMOVAL) ---
+
+    private penCutPaths: fabric.Path[] = [];
+
+    public startPenCut(): void {
+        const activeObject = this.canvas.getActiveObject();
+        if (!activeObject || activeObject.type !== 'image') {
+            this.notificationService.warning('Please select an image first');
+            return;
+        }
+
+        // Clean up any old paths before starting (Safe removal pattern)
+        this.clearAllPenPaths();
+        this.penCutPaths = [];
+
+        this.penCutTarget = activeObject as fabric.Image;
+        this.isPenCutting.set(true);
+
+        // De-select and lock the image so user doesn't move it while cutting
+        this.canvas.discardActiveObject();
+        this.penCutTarget.set({
+            selectable: false,
+            evented: false,
+            lockMovementX: true,
+            lockMovementY: true
+        });
+
+        // Setup specialized brush for high-precision
+        this.canvas.isDrawingMode = true;
+        const brush = new fabric.PencilBrush(this.canvas);
+        brush.width = 2 / (this.canvas.getZoom() || 1);
+        brush.color = '#7c3aed';
+        brush.decimate = 0.05; // High precision
+        brush.strokeLineCap = 'round';
+        brush.strokeLineJoin = 'round';
+
+        brush.shadow = new fabric.Shadow({
+            color: 'rgba(255,255,255,0.9)',
+            blur: 3 / (this.canvas.getZoom() || 1),
+            offsetX: 0,
+            offsetY: 0
+        });
+
+        this.canvas.freeDrawingBrush = brush;
+        this.canvas.defaultCursor = 'crosshair';
+        this.canvas.renderAll();
+
+        this.notificationService.showToast('Trace around the object. You can draw multiple shapes.', 'info', 4000);
+    }
+
+    private handlePenCutPath(path: fabric.Path): void {
+        if (!this.penCutTarget) {
+            this.canvas.remove(path);
+            return;
+        }
+
+        // Tag this path so we can find it later for removal
+        (path as any).isPenCutPath = true;
+
+        // 1. Auto-close the path for clipping purposes
+        if (path.path && path.path.length > 0) {
+            const pathData = path.path as any[];
+            const lastMove = pathData[pathData.length - 1];
+            if (lastMove && lastMove[0] !== 'Z') {
+                pathData.push(['Z']);
+            }
+        }
+
+        this.penCutPaths.push(path);
+        this.currentPenPath = path;
+
+        // 2. Configure path for Visual Trace
+        path.set({
+            fill: 'rgba(124, 58, 237, 0.2)', // Semi-transparent for better visualization
+            stroke: '#7c3aed',
+            strokeWidth: 2 / (this.canvas.getZoom() || 1),
+            absolutePositioned: true,
+            selectable: false,
+            evented: false,
+            visible: true,
+            opacity: 0.8
+        });
+
+        // 3. Real-time Preview: Update target's clipPath
+        this.updatePenCutPreview();
+    }
+
+    private async updatePenCutPreview(): Promise<void> {
+        if (!this.penCutTarget || this.penCutPaths.length === 0) return;
+
+        // Clone all paths for a combined preview mask
+        const clones = await Promise.all(this.penCutPaths.map(p => p.clone()));
+
+        const maskGroup = clones.length > 1
+            ? new fabric.Group(clones, { absolutePositioned: true, visible: false })
+            : clones[0];
+
+        (maskGroup as any).set({ absolutePositioned: true, visible: false });
+
+        if (this.penCutTarget) {
+            this.penCutTarget.set({
+                clipPath: maskGroup,
+                dirty: true
+            });
+            this.canvas.requestRenderAll();
+        }
+    }
+
+    public async finishPenCut(): Promise<void> {
+        if (!this.penCutTarget || this.penCutPaths.length === 0) {
+            this.cancelPenCut();
+            return;
+        }
+
+        const img = this.penCutTarget;
+
+        try {
+            // 1. Create a permanent ClipPath (Local coordinates)
+            const clips = await Promise.all(this.penCutPaths.map(async (rawPath) => {
+                const finalPath = await rawPath.clone() as fabric.Path;
+
+                // Translate world to local
+                const worldCenter = rawPath.getCenterPoint();
+                const invMatrix = fabric.util.invertTransform(img.calcTransformMatrix());
+                const localPoint = fabric.util.transformPoint(worldCenter, invMatrix);
+
+                finalPath.set({
+                    absolutePositioned: false,
+                    originX: 'center',
+                    originY: 'center',
+                    left: localPoint.x,
+                    top: localPoint.y,
+                    angle: (rawPath.angle || 0) - (img.angle || 0),
+                    scaleX: (rawPath.scaleX || 1) / (img.scaleX || 1),
+                    scaleY: (rawPath.scaleY || 1) / (img.scaleY || 1),
+                    fill: 'white',
+                    stroke: 'transparent'
+                });
+                return finalPath;
+            }));
+
+            const finalClip = clips.length > 1
+                ? new fabric.Group(clips, { absolutePositioned: false, fill: 'white' })
+                : clips[0];
+
+            img.set({
+                clipPath: finalClip,
+                selectable: true,
+                evented: true,
+                lockMovementX: false,
+                lockMovementY: false,
+                perPixelTargetFind: false, // Fix selection difficulty: Use bounding box
+                isBgRemoved: true, // Enable 'Restore' button
+                dirty: true
+            });
+
+            // 2. PRESERVE THE SKETCH (Requested functionality)
+            this.penCutPaths.forEach(path => {
+                (path as any).isPenCutPath = false; // Prevents removal in reset
+                path.set({
+                    name: 'Pen Cut Trace',
+                    selectable: true,
+                    evented: true,
+                    opacity: 1,
+                    strokeDashArray: [5, 5],
+                    fill: 'transparent'
+                });
+            });
+
+            img.setCoords();
+            this.canvas.setActiveObject(img);
+            this.canvas.renderAll();
+
+            this.notificationService.success('Cut finished. Trace kept as Layer.');
+            this.saveState();
+        } catch (err) {
+            console.error('[PenCut] Finish failed:', err);
+            this.notificationService.error('Could not apply cut');
+        } finally {
+            this.resetPenCutState(false); // Don't remove if they was just finished
+        }
+    }
+
+    public cancelPenCut(): void {
+        if (this.penCutTarget) {
+            this.penCutTarget.set({
+                clipPath: undefined,
+                selectable: true,
+                evented: true,
+                lockMovementX: false,
+                lockMovementY: false
+            });
+            this.canvas.setActiveObject(this.penCutTarget);
+        }
+
+        this.resetPenCutState(true); // Remove paths on cancel
+    }
+
+    private resetPenCutState(removePaths: boolean = true): void {
+        this.isPenCutting.set(false);
+        this.penCutTarget = null;
+        this.currentPenPath = null;
+        this.canvas.isDrawingMode = false;
+
+        if (removePaths) {
+            this.clearAllPenPaths();
+        }
+
+        this.penCutPaths = [];
+        this.canvas.defaultCursor = 'default';
+        this.canvas.renderAll();
+    }
+
+    public undoLastPenPath(): void {
+        const last = this.penCutPaths.pop();
+        if (last) {
+            this.canvas.remove(last);
+            this.updatePenCutPreview();
+            this.canvas.renderAll();
+        }
+    }
+
+    public clearAllPenPaths(): void {
+        const tracePaths = this.canvas.getObjects().filter(obj => (obj as any).isPenCutPath);
+        tracePaths.forEach(p => this.canvas.remove(p));
+        this.penCutPaths = [];
+        this.updatePenCutPreview();
+        this.canvas.renderAll();
+    }
+
     async restoreOriginalImage(): Promise<void> {
         const activeObject = this.canvas.getActiveObject();
         if (!activeObject || !(activeObject as any).originalSrc) {
@@ -1430,9 +1739,10 @@ export class BannerService {
                     angle: currentImg.angle,
                     originX: currentImg.originX,
                     originY: currentImg.originY,
-                    clipPath: currentImg.clipPath, // Keep mask if any
-                    // Preserve IDB link if the original source itself was from IDB
-                    idbId: rawOriginalSrc.startsWith('indexeddb://') ? rawOriginalSrc.replace('indexeddb://', '') : (currentImg as any).idbId
+                    clipPath: undefined,
+                    isBgRemoved: false,
+                    idbId: rawOriginalSrc.startsWith('indexeddb://') ? rawOriginalSrc.replace('indexeddb://', '') : (currentImg as any).idbId,
+                    originalSrc: rawOriginalSrc
                 });
 
                 this.canvas.add(restoredImg);
@@ -1738,9 +2048,7 @@ export class BannerService {
 
     private async restoreImagesFromStorage(json: any) {
         if (json.objects) {
-            for (const obj of json.objects) {
-                await this.restoreObjectImage(obj);
-            }
+            await Promise.all(json.objects.map((obj: any) => this.restoreObjectImage(obj)));
         }
         // Handle Background/Overlay (string or object)
         if (json.backgroundImage) {
@@ -1767,7 +2075,7 @@ export class BannerService {
             console.log(`[Restoration] Restoring persistence via idbId: ${obj.idbId} for ${obj.type}`);
             const restored = await this.restoreUrl(`indexeddb://${obj.idbId}`);
             if (restored) {
-                if (obj.src !== undefined) obj.src = restored;
+                if (obj.src !== undefined || obj.type === 'image') obj.src = restored;
                 // Update originalSrc too if it was pointing to the IDB
                 if (obj.originalSrc?.startsWith('indexeddb://')) obj.originalSrc = restored;
                 // Ensure originalImageSrc follows suit if present
@@ -1807,9 +2115,7 @@ export class BannerService {
 
         // 4. Recursively handle groups
         if (obj.objects) {
-            for (const child of obj.objects) {
-                await this.restoreObjectImage(child);
-            }
+            await Promise.all(obj.objects.map((child: any) => this.restoreObjectImage(child)));
         }
     }
 
@@ -2625,9 +2931,28 @@ export class BannerService {
     }
 
     exportToImage(format: 'png' | 'jpeg'): void {
-        const dataURL = this.canvas.toDataURL({ format, multiplier: 2 });
+        const currentZoom = this.canvas.getZoom();
+        const currentWidth = this.canvas.width;
+        const currentHeight = this.canvas.height;
+
+        // Temporarily reset to full base design size for high-res export
+        this.canvas.setDimensions({ width: 1200, height: 675 });
+        this.canvas.setZoom(1);
+
+        const dataURL = this.canvas.toDataURL({
+            format,
+            multiplier: 2, // Gives 2400x1350px image
+            quality: 1.0,
+            enableRetinaScaling: true
+        });
+
+        // Restore user's view state (mobile-fit or zoom)
+        this.canvas.setDimensions({ width: currentWidth!, height: currentHeight! });
+        this.canvas.setZoom(currentZoom);
+        this.canvas.requestRenderAll();
+
         const link = document.createElement('a');
-        link.download = `design.${format}`;
+        link.download = `designhub-${Date.now()}.${format}`;
         link.href = dataURL;
         link.click();
     }

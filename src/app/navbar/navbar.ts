@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BannerService } from '../services/banner.service';
@@ -9,7 +9,8 @@ import { NotificationService } from '../services/notification.service';
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './navbar.html',
-  styleUrl: './navbar.scss'
+  styleUrl: './navbar.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class NavbarComponent {
   public bannerService = inject(BannerService);
@@ -27,7 +28,7 @@ export class NavbarComponent {
     this.activeMenu = null;
   }
 
-  selectBrush(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted') {
+  selectBrush(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles') {
     this.bannerService.setBrushType(type);
     if (!this.bannerService.isDrawingMode()) {
       this.bannerService.toggleDrawingMode(true);

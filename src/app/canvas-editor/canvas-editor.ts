@@ -1,4 +1,4 @@
-import { Component, AfterViewInit, inject, HostListener } from '@angular/core';
+import { Component, AfterViewInit, inject, HostListener, ChangeDetectionStrategy } from '@angular/core';
 import { BannerService } from '../services/banner.service';
 import { CommonModule } from '@angular/common';
 import * as fabric from 'fabric';
@@ -9,6 +9,7 @@ import * as fabric from 'fabric';
   imports: [CommonModule],
   templateUrl: './canvas-editor.html',
   styleUrl: './canvas-editor.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class CanvasEditor implements AfterViewInit {
   public bannerService = inject(BannerService);

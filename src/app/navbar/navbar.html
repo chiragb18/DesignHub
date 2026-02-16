@@ -1,4 +1,4 @@
-<nav class="toolbar-container">
+<nav class="toolbar-container" [class.is-mobile]="bannerService.isMobile()">
     <!-- Left Section: Logo & Branding -->
     <div class="toolbar-left">
         <div class="brand-logo">
@@ -6,168 +6,243 @@
                 <img src="designHub-logo.png" alt="DesignHub Logo" class="main-logo-img">
                 <div class="logo-glow"></div>
             </div>
-            <div class="brand-name">Design<span>Hub</span></div>
+            <div class="brand-name" *ngIf="!bannerService.isMobile()">Design<span>Hub</span></div>
         </div>
     </div>
 
-    <!-- Center Section: Main Tools -->
+    <!-- Center Section: Main Tools (Scrollable on mobile) -->
     <div class="toolbar-center">
-        <!-- Crop Mode Active -->
-        <div class="tool-group horizontal" *ngIf="isCropping">
-            <div class="context-label">Crop Image</div>
-            <div class="divider"></div>
-            <button (click)="cancelCrop()" class="nav-tool-btn cancel-btn" title="Cancel Crop">
-                <span class="material-symbols-outlined">close</span>
-                <span class="tool-label">Cancel</span>
-            </button>
-            <button (click)="applyCrop()" class="nav-tool-btn apply-btn" title="Apply Crop">
-                <span class="material-symbols-outlined">check</span>
-                <span class="tool-label">Apply</span>
-            </button>
-        </div>
-
-        <!-- Standard Tools (Hidden when cropping) -->
-        <div class="tool-group horizontal" *ngIf="!isCropping">
-
-
-            <button (click)="setSelectMode()" class="nav-tool-btn"
-                [class.active]="!bannerService.isDrawingMode() && !bannerService.isErasing()" title="Select Tool (V)">
-                <span class="material-symbols-outlined">near_me</span>
-                <span class="tool-label">Select</span>
-            </button>
-
-            <!-- Crop Button (Visible only when Image is selected) -->
-            <button *ngIf="selectedObject?.type === 'image'" (click)="startCrop()" class="nav-tool-btn"
-                title="Crop Image">
-                <span class="material-symbols-outlined">crop</span>
-                <span class="tool-label">Crop</span>
-            </button>
-
-            <!-- Brush Dropdown -->
-            <div class="dropdown-wrapper">
-                <button (click)="toggleMenu('brush')" class="nav-tool-btn"
-                    [class.active]="activeMenu === 'brush' || bannerService.isDrawingMode()" title="Brush Tool (B)">
-                    <span class="material-symbols-outlined">brush</span>
-                    <span class="tool-label">Brush</span>
-                    <span class="material-symbols-outlined arrow"
-                        [class.rotated]="activeMenu === 'brush'">expand_more</span>
+        <div class="tools-scroll-container">
+            <!-- Crop Mode Active -->
+            <div class="tool-group horizontal" *ngIf="isCropping">
+                <div class="context-label" *ngIf="!bannerService.isMobile()">Crop Image</div>
+                <button (click)="cancelCrop()" class="nav-tool-btn cancel-btn" title="Cancel Crop">
+                    <span class="material-symbols-outlined">close</span>
+                    <span class="tool-label">Cancel</span>
                 </button>
-                <div class="dropdown-menu" *ngIf="activeMenu === 'brush'">
-                    <button (click)="selectBrush('pencil')" class="menu-item"
-                        [class.active]="bannerService.brushType() === 'pencil'">
-                        <span class="material-symbols-outlined">edit</span> Pencil
-                    </button>
-                    <button (click)="selectBrush('spray')" class="menu-item"
-                        [class.active]="bannerService.brushType() === 'spray'">
-                        <span class="material-symbols-outlined">blur_on</span> Spray
-                    </button>
-                    <button (click)="selectBrush('circle')" class="menu-item"
-                        [class.active]="bannerService.brushType() === 'circle'">
-                        <span class="material-symbols-outlined">bubble_chart</span> Splatter
-                    </button>
-                    <button (click)="selectBrush('highlighter')" class="menu-item"
-                        [class.active]="bannerService.brushType() === 'highlighter'">
-                        <span class="material-symbols-outlined">ink_highlighter</span> Highlighter
-                    </button>
-                    <button (click)="selectBrush('dotted')" class="menu-item"
-                        [class.active]="bannerService.brushType() === 'dotted'">
-                        <span class="material-symbols-outlined">more_horiz</span> Dotted
-                    </button>
-                </div>
+                <button (click)="applyCrop()" class="nav-tool-btn apply-btn" title="Apply Crop">
+                    <span class="material-symbols-outlined">check</span>
+                    <span class="tool-label">Apply</span>
+                </button>
             </div>
 
-            <button (click)="toggleEraser()" class="nav-tool-btn" [class.active]="bannerService.isErasing()"
-                title="Eraser Tool (E)">
-                <span class="material-symbols-outlined">ink_eraser</span>
-                <span class="tool-label">Eraser</span>
-            </button>
+            <!-- Standard Tools (Hidden when cropping) -->
+            <div class="tool-group horizontal" *ngIf="!isCropping">
+                <button (click)="setSelectMode()" class="nav-tool-btn"
+                    [class.active]="!bannerService.isDrawingMode() && !bannerService.isErasing()"
+                    title="Select Tool (V)">
+                    <span class="material-symbols-outlined">near_me</span>
+                    <span class="tool-label">Select</span>
+                </button>
 
-            <!-- Brush/Eraser Global Properties -->
-            <div class="drawing-properties-group" *ngIf="bannerService.isDrawingMode() || bannerService.isErasing()">
-                <div class="divider"></div>
+                <!-- Crop Button -->
+                <button *ngIf="selectedObject?.type === 'image'" (click)="startCrop()" class="nav-tool-btn"
+                    title="Crop Image">
+                    <span class="material-symbols-outlined">crop</span>
+                    <span class="tool-label">Crop</span>
+                </button>
 
-                <div class="slider-prop-item">
-                    <span class="material-symbols-outlined icon">line_weight</span>
-                    <input type="range" min="1" max="100" [value]="bannerService.brushSize()"
-                        (input)="bannerService.updateBrushSize($any($event.target).value)" class="prop-slider">
-                    <span class="prop-val">{{ bannerService.brushSize() }}px</span>
-                </div>
+                <!-- Brush Dropdown -->
+                <div class="dropdown-wrapper">
+                    <button (click)="toggleMenu('brush')" class="nav-tool-btn"
+                        [class.active]="activeMenu === 'brush' || bannerService.isDrawingMode()" title="Brush Tool (B)">
+                        <span class="material-symbols-outlined">brush</span>
+                        <span class="tool-label">Brush</span>
+                        <span class="material-symbols-outlined arrow"
+                            [class.rotated]="activeMenu === 'brush'">expand_more</span>
+                    </button>
+                    <div class="dropdown-menu brush-menu" *ngIf="activeMenu === 'brush'">
+                        <div class="menu-header">Standard Brushes</div>
+                        <button (click)="selectBrush('pencil')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'pencil'">
+                            <span class="material-symbols-outlined">edit</span> Pencil
+                        </button>
+                        <button (click)="selectBrush('ink')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'ink'">
+                            <span class="material-symbols-outlined">gesture</span> Ink Pen
+                        </button>
+                        <button (click)="selectBrush('highlighter')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'highlighter'">
+                            <span class="material-symbols-outlined">ink_highlighter</span> Highlighter
+                        </button>
 
-                <div class="color-picker-wrapper compact" *ngIf="bannerService.isDrawingMode()">
-                    <div class="color-swatch-btn" [style.background-color]="bannerService.brushColor()">
-                        <input type="color" [value]="bannerService.brushColor()"
-                            (input)="utilUpdateBrushColor($any($event))">
+                        <div class="menu-divider"></div>
+                        <div class="menu-header">Artistic Effects</div>
+                        <button (click)="selectBrush('glow')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'glow'">
+                            <span class="material-symbols-outlined">flare</span> Neon Glow
+                        </button>
+                        <button (click)="selectBrush('crayon')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'crayon'">
+                            <span class="material-symbols-outlined">draw</span> Crayon
+                        </button>
+                        <button (click)="selectBrush('ribbon')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'ribbon'">
+                            <span class="material-symbols-outlined">reorder</span> Ribbon
+                        </button>
+
+                        <div class="menu-divider"></div>
+                        <div class="menu-header">Special Brushes</div>
+                        <button (click)="selectBrush('spray')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'spray'">
+                            <span class="material-symbols-outlined">blur_on</span> Spray
+                        </button>
+                        <button (click)="selectBrush('circle')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'circle'">
+                            <span class="material-symbols-outlined">bubble_chart</span> Splatter
+                        </button>
+                        <button (click)="selectBrush('dotted')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'dotted'">
+                            <span class="material-symbols-outlined">more_horiz</span> Dotted
+                        </button>
+
+                        <div class="menu-divider"></div>
+                        <div class="menu-header">Decorative Patterns</div>
+                        <button (click)="selectBrush('stars')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'stars'">
+                            <span class="material-symbols-outlined">grade</span> Stars
+                        </button>
+                        <button (click)="selectBrush('hearts')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'hearts'">
+                            <span class="material-symbols-outlined">favorite</span> Hearts
+                        </button>
+                        <button (click)="selectBrush('bubbles')" class="menu-item"
+                            [class.active]="bannerService.brushType() === 'bubbles'">
+                            <span class="material-symbols-outlined">radio_button_unchecked</span> Bubbles
+                        </button>
                     </div>
                 </div>
+
+                <button (click)="toggleEraser()" class="nav-tool-btn" [class.active]="bannerService.isErasing()"
+                    title="Eraser Tool (E)">
+                    <span class="material-symbols-outlined">ink_eraser</span>
+                    <span class="tool-label">Eraser</span>
+                </button>
+
+                <!-- Brush/Eraser Global Properties -->
+                <div class="drawing-properties-group"
+                    *ngIf="bannerService.isDrawingMode() || bannerService.isErasing()">
+                    <div class="divider"></div>
+                    <div class="slider-prop-item">
+                        <span class="material-symbols-outlined icon">line_weight</span>
+                        <input type="range" min="1" max="100" [value]="bannerService.brushSize()"
+                            (input)="bannerService.updateBrushSize($any($event.target).value)" class="prop-slider">
+                        <span class="prop-val">{{ bannerService.brushSize() }}px</span>
+                    </div>
+
+                    <div class="color-picker-wrapper compact" *ngIf="bannerService.isDrawingMode()">
+                        <div class="color-swatch-btn" [style.background-color]="bannerService.brushColor()">
+                            <input type="color" [value]="bannerService.brushColor()"
+                                (input)="utilUpdateBrushColor($any($event))">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <button (click)="addText()" class="nav-tool-btn" title="Add Text (T)">
+                    <span class="material-symbols-outlined">title</span>
+                    <span class="tool-label">Text</span>
+                </button>
+
+                <button (click)="triggerUpload()" class="nav-tool-btn" title="Upload Image (U)">
+                    <span class="material-symbols-outlined">image</span>
+                    <span class="tool-label">Upload</span>
+                </button>
             </div>
-
-            <div class="divider"></div>
-
-            <button (click)="addText()" class="nav-tool-btn" title="Add Text (T)">
-                <span class="material-symbols-outlined">title</span>
-                <span class="tool-label">Text</span>
-            </button>
-
-            <button (click)="triggerUpload()" class="nav-tool-btn" title="Upload Image (U)">
-                <span class="material-symbols-outlined">image</span>
-                <span class="tool-label">Upload</span>
-            </button>
         </div>
     </div>
 
     <!-- Right Section: Actions -->
     <div class="toolbar-right" *ngIf="!isCropping">
-        <button (click)="undo()" class="nav-tool-btn" title="Undo (Ctrl+Z)" [disabled]="!bannerService.canUndo()">
-            <span class="material-symbols-outlined">undo</span>
-        </button>
-        <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)" [disabled]="!bannerService.canRedo()">
-            <span class="material-symbols-outlined">redo</span>
-        </button>
-
-        <div class="divider"></div>
-
-        <!-- Language Toggle -->
-        <div class="language-toggle">
-            <button class="lang-btn" [class.active]="currentLanguage === 'en'" (click)="toggleLanguage('en')">
-                EN
+        <!-- Desktop Actions -->
+        <ng-container *ngIf="!bannerService.isMobile()">
+            <button (click)="undo()" class="nav-tool-btn" title="Undo (Ctrl+Z)" [disabled]="!bannerService.canUndo()">
+                <span class="material-symbols-outlined">undo</span>
             </button>
-            <button class="lang-btn" [class.active]="currentLanguage === 'mr'" (click)="toggleLanguage('mr')">
-                मराठी
+            <button (click)="redo()" class="nav-tool-btn" title="Redo (Ctrl+Y)" [disabled]="!bannerService.canRedo()">
+                <span class="material-symbols-outlined">redo</span>
             </button>
-        </div>
 
-        <div class="divider"></div>
+            <div class="divider"></div>
 
-        <button (click)="startNewDesign()" class="btn-outline">New Design</button>
-        <div class="dropdown-wrapper">
-            <button (click)="toggleMenu('save')" class="btn-primary-outline" [class.active]="activeMenu === 'save'"
-                style="padding-right: 8px;">
-                <span class="material-symbols-outlined" style="font-size: 20px;">save</span>
-                Save
-                <span class="material-symbols-outlined arrow"
-                    style="font-size: 18px; margin-left: 4px;">expand_more</span>
-            </button>
-            <div class="dropdown-menu" *ngIf="activeMenu === 'save'"
-                style="right: 0; left: auto; top: 100%; margin-top: 8px; min-width: 200px;">
-                <button (click)="saveProject()" class="menu-item">
-                    <span class="material-symbols-outlined">save_as</span> Save Project
+            <!-- Language Toggle -->
+            <div class="language-toggle">
+                <button class="lang-btn" [class.active]="currentLanguage === 'en'" (click)="toggleLanguage('en')">
+                    EN
                 </button>
-                <div class="divider" style="height: 1px; background: #e5e7eb; margin: 4px 0; width: 100%;"></div>
-                <button (click)="saveAsTemplate()" class="menu-item">
-                    <span class="material-symbols-outlined">grid_view</span> Save as Template
-                </button>
-                <button (click)="saveAsDesign()" class="menu-item">
-                    <span class="material-symbols-outlined">design_services</span> Save as Design
-                </button>
-                <button (click)="saveAsBackground()" class="menu-item">
-                    <span class="material-symbols-outlined">wallpaper</span> Save as Background
+                <button class="lang-btn" [class.active]="currentLanguage === 'mr'" (click)="toggleLanguage('mr')">
+                    मराठी
                 </button>
             </div>
-        </div>
-        <button (click)="downloadPNG()" class="btn-primary">
-            <span class="material-symbols-outlined" style="font-size: 20px;">download</span>
-            Download
-        </button>
+
+            <div class="divider"></div>
+
+            <button (click)="startNewDesign()" class="btn-outline">New Design</button>
+            <div class="dropdown-wrapper">
+                <button (click)="toggleMenu('save')" class="btn-primary-outline" [class.active]="activeMenu === 'save'">
+                    <span class="material-symbols-outlined">save</span>
+                    Save
+                    <span class="material-symbols-outlined arrow">expand_more</span>
+                </button>
+                <div class="dropdown-menu right-align" *ngIf="activeMenu === 'save'">
+                    <button (click)="saveProject()" class="menu-item">
+                        <span class="material-symbols-outlined">save_as</span> Save Project
+                    </button>
+                    <div class="menu-divider"></div>
+                    <button (click)="saveAsTemplate()" class="menu-item">
+                        <span class="material-symbols-outlined">grid_view</span> Save as Template
+                    </button>
+                    <button (click)="saveAsDesign()" class="menu-item">
+                        <span class="material-symbols-outlined">design_services</span> Save as Design
+                    </button>
+                    <button (click)="saveAsBackground()" class="menu-item">
+                        <span class="material-symbols-outlined">wallpaper</span> Save as Background
+                    </button>
+                </div>
+            </div>
+            <button (click)="downloadPNG()" class="btn-primary">
+                <span class="material-symbols-outlined">download</span>
+                Download
+            </button>
+        </ng-container>
+
+        <!-- Mobile More Menu -->
+        <ng-container *ngIf="bannerService.isMobile()">
+            <button (click)="undo()" class="nav-tool-btn icon-only" [disabled]="!bannerService.canUndo()">
+                <span class="material-symbols-outlined">undo</span>
+            </button>
+            <button (click)="redo()" class="nav-tool-btn icon-only" [disabled]="!bannerService.canRedo()">
+                <span class="material-symbols-outlined">redo</span>
+            </button>
+
+            <div class="dropdown-wrapper">
+                <button (click)="toggleMenu('more')" class="nav-tool-btn icon-only"
+                    [class.active]="activeMenu === 'more'">
+                    <span class="material-symbols-outlined">more_vert</span>
+                </button>
+                <div class="dropdown-menu right-align" *ngIf="activeMenu === 'more'">
+                    <button (click)="downloadPNG()" class="menu-item highlight">
+                        <span class="material-symbols-outlined">download</span> Download PNG
+                    </button>
+                    <div class="menu-divider"></div>
+                    <button (click)="saveProject()" class="menu-item">
+                        <span class="material-symbols-outlined">save</span> Save Project
+                    </button>
+                    <button (click)="startNewDesign()" class="menu-item">
+                        <span class="material-symbols-outlined">add_circle</span> New Design
+                    </button>
+                    <div class="menu-divider"></div>
+                    <div class="lang-selector-item">
+                        <span class="material-symbols-outlined">language</span>
+                        <div class="lang-chips">
+                            <span [class.active]="currentLanguage === 'en'" (click)="toggleLanguage('en')">EN</span>
+                            <span [class.active]="currentLanguage === 'mr'" (click)="toggleLanguage('mr')">MR</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </ng-container>
     </div>
 
     <input type="file" id="imageUpload" style="display: none;" (change)="uploadImage($event)" accept="image/*">

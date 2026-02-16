@@ -32,38 +32,45 @@
         left: 50% !important;
         transform: translateX(-50%) !important;
         right: auto !important;
-        /* Explicitly unset right to prevent conflicts */
         display: flex;
         align-items: center;
-        background: white;
-        padding: 6px 12px;
-        border-radius: 100px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
-        border: 1px solid rgba(0, 0, 0, 0.04);
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(12px);
+        padding: 6px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.5);
         z-index: 100;
-        animation: fadeIn 0.3s ease-out;
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
         .zoom-controls {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
 
             .zoom-action-btn {
-                background: transparent;
-                border: none;
-                width: 28px;
-                height: 28px;
-                border-radius: 50%;
+                background: white;
+                border: 1px solid #f1f5f9;
+                width: 32px;
+                height: 32px;
+                border-radius: 10px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                color: #4b5563;
-                transition: background 0.2s;
+                color: #64748b;
+                transition: all 0.2s;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 
                 &:hover {
-                    background: #f3f4f6;
-                    color: #111827;
+                    background: #fdfcff;
+                    color: var(--primary-color);
+                    border-color: #ddd6fe;
+                    transform: translateY(-1px);
+                }
+
+                &:active {
+                    transform: scale(0.95);
                 }
 
                 .material-symbols-outlined {
@@ -72,10 +79,10 @@
             }
 
             .zoom-display {
-                font-size: 13px;
-                font-weight: 600;
-                color: #374151;
-                min-width: 40px;
+                font-size: 12px;
+                font-weight: 700;
+                color: #1e293b;
+                min-width: 50px;
                 text-align: center;
                 font-variant-numeric: tabular-nums;
             }
@@ -83,29 +90,38 @@
 
         .vertical-divider {
             width: 1px;
-            height: 16px;
-            background: #e5e7eb;
+            height: 20px;
+            background: #e2e8f0;
+            margin: 0 4px;
         }
 
         .fit-screen-btn {
-            background: transparent;
-            border: none;
-            padding: 4px;
-            border-radius: 4px;
+            background: white;
+            border: 1px solid #f1f5f9;
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
             cursor: pointer;
-            color: #4b5563;
+            color: #64748b;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 
             &:hover {
-                background: #f3f4f6;
-                color: #111827;
+                background: #fdfcff;
+                color: var(--primary-color);
+                border-color: #ddd6fe;
+                transform: translateY(-1px) rotate(90deg);
+            }
+
+            &:active {
+                transform: scale(0.95);
             }
 
             .material-symbols-outlined {
-                font-size: 20px;
+                font-size: 18px;
             }
         }
     }

@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NavbarComponent } from './navbar/navbar';
 import { RightSidebarComponent } from './right-sidebar/right-sidebar';
@@ -12,7 +12,8 @@ import { MobileToolbarComponent } from './mobile-toolbar/mobile-toolbar';
   standalone: true,
   imports: [CommonModule, NavbarComponent, RightSidebarComponent, CanvasEditor, NotificationContainer, MobileToolbarComponent],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrl: './app.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 
 export class App {
@@ -37,8 +38,8 @@ export class App {
 
   onResizing(event: MouseEvent) {
     if (this.isResizing) {
-      const newWidth = event.clientX;
-      if (newWidth > 280 && newWidth < 600) {
+      const newWidth = window.innerWidth - event.clientX;
+      if (newWidth > 280 && newWidth < 800) {
         this.sidebarWidth = newWidth;
       }
     }
@@ -50,10 +51,16 @@ export class App {
     document.body.style.userSelect = 'auto';
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mouseup', this.onMouseUp);
+
+    // Trigger canvas resize to maintain stability
+    setTimeout(() => {
+      this.bannerService.handleResize();
+    }, 50);
   }
 
   resetSidebar() {
-    this.sidebarWidth = 280;
+    this.sidebarWidth = 350;
+    setTimeout(() => this.bannerService.handleResize(), 50);
   }
 
   toggleMobileSidebar() {

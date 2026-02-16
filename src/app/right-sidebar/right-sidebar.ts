@@ -1,4 +1,4 @@
-import { Component, inject, effect, computed } from '@angular/core';
+import { Component, inject, effect, computed, ChangeDetectionStrategy } from '@angular/core';
 import * as fabric from 'fabric';
 import { BannerService } from '../services/banner.service';
 import { CommonModule } from '@angular/common';
@@ -15,7 +15,8 @@ import { TemplatesPanel } from '../templates-panel/templates-panel';
     standalone: true,
     imports: [CommonModule, FormsModule, MatIconModule, MatDividerModule, MatButtonModule, TemplatesPanel, DragDropModule],
     templateUrl: './right-sidebar.html',
-    styleUrl: './right-sidebar.scss'
+    styleUrl: './right-sidebar.scss',
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class RightSidebarComponent {
     public bannerService = inject(BannerService);
@@ -163,10 +164,36 @@ export class RightSidebarComponent {
                 this.maskFlip = (obj as any).maskFlip || false;
             }
         });
+
+        // Effect to update layer previews
+        effect(() => {
+            const objs = this.canvasObjects();
+            // We want to generate previews for objects that don't have them
+            objs.forEach(obj => {
+                if (obj.type === 'image') {
+                    const img = obj as any;
+                    const src = img.src || img._element?.src || (img.getSrc ? img.getSrc() : null);
+                    if (src && !src.startsWith('indexeddb://')) {
+                        img._layerPreview = src;
+                    }
+                } else if (!(obj as any)._layerPreview || (obj as any).dirty) {
+                    // Generate a small preview for other types
+                    try {
+                        (obj as any)._layerPreview = obj.toDataURL({
+                            format: 'png',
+                            multiplier: 120 / (obj.width || 100), // Size it to roughly 120px wide
+                            quality: 0.2
+                        });
+                    } catch (e) {
+                        // Support for objects that can't easily toDataURL
+                    }
+                }
+            });
+        });
     }
 
     get currentObject(): any {
-        return this.selectedObject();
+        return this.selectedObject() || this.bannerService.penCutTarget;
     }
 
 
@@ -278,14 +305,19 @@ export class RightSidebarComponent {
     }
 
     getLayerPreview(obj: any): string | null {
-        if (obj.type === 'image' && obj.src) {
-            return obj.src;
-        }
-        return null;
+        return obj._layerPreview || null;
     }
 
     getLayerName(obj: any): string {
-        if (obj.type === 'textbox') return obj.text || 'Text';
+        if (obj.type === 'textbox' || obj.type === 'i-text') {
+            const text = obj.text || '';
+            return text.length > 20 ? text.substring(0, 17) + '...' : text || 'Empty Text';
+        }
+        if (obj.name) return obj.name;
+        if (obj.type === 'rect') return 'Rectangle';
+        if (obj.type === 'circle') return 'Circle';
+        if (obj.type === 'triangle') return 'Triangle';
+        if (obj.type === 'path') return 'Vector Path';
         return obj.type.charAt(0).toUpperCase() + obj.type.slice(1);
     }
 
