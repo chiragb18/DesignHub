@@ -10,6 +10,156 @@
     </div>
 
     <div class="panel-container">
+        <!-- Draw Panel -->
+        <div class="side-panel" *ngIf="bannerService.activeTab() === 'draw'">
+
+            <!-- ── Mode Toggle ──────────────────────────────────────────── -->
+            <div class="draw-mode-toggle">
+                <button class="mode-btn" [class.active]="bannerService.isDrawingMode() && !bannerService.isErasing()"
+                    (click)="bannerService.toggleEraser(false); bannerService.toggleDrawingMode(true)">
+                    <span class="material-symbols-outlined">brush</span>
+                    Brush
+                </button>
+                <button class="mode-btn eraser-mode" [class.active]="bannerService.isErasing()"
+                    (click)="bannerService.toggleDrawingMode(false); bannerService.toggleEraser(true)">
+                    <span class="material-symbols-outlined">ink_eraser</span>
+                    Eraser
+                </button>
+            </div>
+
+            <!-- ── Live Preview ─────────────────────────────────────────── -->
+            <div class="live-preview-row">
+                <div class="preview-label">Preview</div>
+                <div class="preview-canvas">
+                    <div class="preview-dot"
+                        [style.width.px]="bannerService.isErasing() ? bannerService.eraserSize() : bannerService.brushSize()"
+                        [style.height.px]="bannerService.isErasing() ? bannerService.eraserSize() : bannerService.brushSize()"
+                        [style.background]="bannerService.isErasing() ? 'transparent' : bannerService.brushColor()"
+                        [style.border]="bannerService.isErasing() ? '2px dashed #ef4444' : 'none'"
+                        [style.opacity]="bannerService.isErasing() ? 1 : bannerService.brushOpacity()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Brush Types (hidden when erasing) ────────── -->
+            <ng-container *ngIf="!bannerService.isErasing()">
+                <div class="section-title">CHOOSE A BRUSH</div>
+
+                <svg style="width:0;height:0;position:absolute;" aria-hidden="true">
+                    <defs>
+                        <linearGradient id="rainbowGradientSidebar" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#ff0000" />
+                            <stop offset="20%" style="stop-color:#ff7f00" />
+                            <stop offset="40%" style="stop-color:#ffff00" />
+                            <stop offset="60%" style="stop-color:#00ff00" />
+                            <stop offset="80%" style="stop-color:#0000ff" />
+                            <stop offset="100%" style="stop-color:#4b0082" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+
+                <div class="brush-selection-grid">
+                    <div *ngFor="let brush of bannerService.brushTypes" class="brush-card"
+                        [class.active]="bannerService.brushType() === brush.id" (click)="selectBrush(brush.id)">
+                        <div class="brush-icon-wrapper">
+                            <svg viewBox="0 0 100 100" class="mini-preview">
+                                <path [attr.d]="brush.path" fill="none" stroke="currentColor" stroke-width="8"
+                                    stroke-linecap="round"></path>
+                            </svg>
+                        </div>
+                        <span class="label">{{ brush.name }}</span>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <!-- ── Brush Properties (shown when drawing) ─────────────── -->
+                <ng-container *ngIf="bannerService.isDrawingMode() && !bannerService.isErasing()">
+                    <div class="property-card">
+                        <div class="section-title">Brush Properties</div>
+
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label>Size</label>
+                                <span>{{ bannerService.brushSize() }}px</span>
+                            </div>
+                            <input type="range" [value]="bannerService.brushSize()"
+                                (input)="utilUpdateBrushSize($event)" min="1" max="100">
+                        </div>
+
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label>Opacity</label>
+                                <span>{{ bannerService.brushOpacity() * 100 | number:'1.0-0' }}%</span>
+                            </div>
+                            <input type="range" [value]="bannerService.brushOpacity()"
+                                (input)="utilUpdateBrushOpacity($event)" min="0.1" max="1" step="0.1">
+                        </div>
+
+                        <div class="control-group">
+                            <div class="label-row">
+                                <label>Smoothing</label>
+                                <span>{{ bannerService.brushSmoothing() }}</span>
+                            </div>
+                            <input type="range" [value]="bannerService.brushSmoothing()"
+                                (input)="utilUpdateBrushSmoothing($event)" min="0" max="10" step="1">
+                        </div>
+
+                        <div class="control-group">
+                            <label>Brush Color</label>
+                            <div class="color-picker-wrapper">
+                                <div class="color-swatch-btn" [style.background-color]="bannerService.brushColor()">
+                                    <input type="color" [value]="bannerService.brushColor()"
+                                        (input)="utilUpdateBrushColor($event)">
+                                </div>
+                                <span class="hex-text">{{ bannerService.brushColor() }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </ng-container>
+            </ng-container>
+
+            <!-- ── Eraser Properties (shown when erasing) ───────────────── -->
+            <ng-container *ngIf="bannerService.isErasing()">
+                <div class="property-card">
+                    <div class="section-title">Eraser Properties</div>
+
+                    <div class="control-group">
+                        <div class="label-row">
+                            <label>Eraser Size</label>
+                            <span>{{ bannerService.eraserSize() }}px</span>
+                        </div>
+                        <input type="range" [value]="bannerService.eraserSize()"
+                            (input)="bannerService.updateEraserSize(+$any($event.target).value)" min="1" max="100">
+                    </div>
+
+                    <div class="eraser-tip">
+                        <span class="material-symbols-outlined">info</span>
+                        Draw over areas to erase them. Works on all drawn paths.
+                    </div>
+                </div>
+            </ng-container>
+
+
+            <div class="divider"></div>
+
+            <!-- ── Actions ──────────────────────────────────────────────── -->
+            <div class="draw-actions">
+                <button class="btn-clear-drawings" (click)="bannerService.clearDrawings()"
+                    title="Remove all drawn paths">
+                    <span class="material-symbols-outlined">delete_sweep</span>
+                    Clear Drawings
+                </button>
+
+                <button class="btn-primary w-100"
+                    (click)="bannerService.toggleDrawingMode(false); bannerService.toggleEraser(false); bannerService.activeTab.set('')">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    Done Drawing
+                </button>
+            </div>
+        </div>
+
+
         <!-- 1. Templates Panel -->
         <div class="side-panel" *ngIf="bannerService.activeTab() === 'templates'">
             <app-templates-panel></app-templates-panel>
@@ -88,6 +238,29 @@
                     </div>
                 </div>
 
+                <div class="control-row-grid spacing-controls">
+                    <div class="control-col">
+                        <div class="slider-group">
+                            <div class="label-row">
+                                <label>Letter Spacing</label>
+                                <span>{{ charSpacing }}</span>
+                            </div>
+                            <input type="range" min="-10" max="100" [(ngModel)]="charSpacing"
+                                (input)="onPropertyChange('charSpacing', charSpacing)">
+                        </div>
+                    </div>
+                    <div class="control-col">
+                        <div class="slider-group">
+                            <div class="label-row">
+                                <label>Line Height</label>
+                                <span>{{ lineHeight | number:'1.1-1' }}</span>
+                            </div>
+                            <input type="range" min="0.5" max="3" step="0.1" [(ngModel)]="lineHeight"
+                                (input)="onPropertyChange('lineHeight', lineHeight)">
+                        </div>
+                    </div>
+                </div>
+
                 <div class="divider"></div>
 
                 <div class="section-title">Style & Alignment</div>
@@ -151,24 +324,6 @@
 
                 <div class="divider"></div>
 
-                <div class="section-title">Curve & Distortion</div>
-                <div class="slider-group">
-                    <div class="label-row">
-                        <label>Text Curve</label>
-                        <div class="label-badges">
-                            <span>{{ textCurve }}</span>
-                            <button class="mini-reset" (click)="onTextCurveChange(0)"
-                                *ngIf="textCurve !== 0">Reset</button>
-                        </div>
-                    </div>
-                    <input type="range" min="-100" max="100" [(ngModel)]="textCurve"
-                        (input)="onTextCurveChange($any($event.target).value)">
-                    <div class="slider-hints">
-                        <span>Down</span>
-                        <span>Straight</span>
-                        <span>Up</span>
-                    </div>
-                </div>
             </div>
 
             <!-- Emojis (Always Visible) -->
@@ -393,8 +548,6 @@
                         </div>
                     </div>
                 </div>
-
-
 
                 <div class="property-card">
                     <div class="section-title">Edge Style / Mask</div>

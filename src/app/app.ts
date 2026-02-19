@@ -41,6 +41,8 @@ export class App {
       const newWidth = window.innerWidth - event.clientX;
       if (newWidth > 280 && newWidth < 800) {
         this.sidebarWidth = newWidth;
+        // Sync with service to update canvas workspace
+        this.bannerService.setSidebarWidth(newWidth + 88); // Include left nav width
       }
     }
   }

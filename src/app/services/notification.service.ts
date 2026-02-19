@@ -28,7 +28,7 @@ export class NotificationService {
     public activeModal = signal<ModalOptions | null>(null);
     private toastCounter = 0; // Counter to ensure unique IDs
 
-    showToast(message: string, type: NotificationType = 'info', duration: number = 3000) {
+    showToast(message: string, type: NotificationType = 'info', duration: number = 3000): string {
         const id = `${Date.now()}-${this.toastCounter++}`;
         const newToast: Toast = { id, message, type, duration };
 
@@ -39,26 +39,27 @@ export class NotificationService {
                 this.removeToast(id);
             }, duration);
         }
+        return id;
     }
 
     removeToast(id: string) {
         this.toasts.update(current => current.filter(t => t.id !== id));
     }
 
-    success(message: string) {
-        this.showToast(message, 'success');
+    success(message: string): string {
+        return this.showToast(message, 'success');
     }
 
-    error(message: string) {
-        this.showToast(message, 'error');
+    error(message: string): string {
+        return this.showToast(message, 'error');
     }
 
-    info(message: string) {
-        this.showToast(message, 'info');
+    info(message: string): string {
+        return this.showToast(message, 'info');
     }
 
-    warning(message: string) {
-        this.showToast(message, 'warning');
+    warning(message: string): string {
+        return this.showToast(message, 'warning');
     }
 
     confirm(title: string, message: string, onConfirm: () => void, onCancel?: () => void) {

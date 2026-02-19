@@ -18,8 +18,6 @@ export class NavbarComponent {
 
   activeMenu: string | null = null;
 
-
-
   toggleMenu(menu: string) {
     this.activeMenu = this.activeMenu === menu ? null : menu;
   }
@@ -28,12 +26,38 @@ export class NavbarComponent {
     this.activeMenu = null;
   }
 
-  selectBrush(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles') {
-    this.bannerService.setBrushType(type);
-    if (!this.bannerService.isDrawingMode()) {
-      this.bannerService.toggleDrawingMode(true);
-    }
+  /** Opens the Draw sidebar and activates brush drawing mode */
+  openDrawSidebar() {
+    this.bannerService.toggleEraser(false);          // turn off eraser
+    this.bannerService.activeTab.set('draw');         // open sidebar draw tab
+    this.bannerService.toggleDrawingMode(true);       // enable drawing mode
     this.closeMenus();
+  }
+
+  /** Opens the Draw sidebar and activates eraser mode */
+  openEraserMode() {
+    this.bannerService.toggleDrawingMode(false);      // turn off brush
+    this.bannerService.activeTab.set('draw');         // open sidebar draw tab
+    this.bannerService.toggleEraser(true);            // force eraser ON
+    this.closeMenus();
+  }
+
+
+  utilUpdateBrushOpacity(event: Event) {
+    const opacity = parseFloat((event.target as HTMLInputElement).value);
+    this.bannerService.brushOpacity.set(opacity);
+    this.bannerService.setBrushType(this.bannerService.brushType());
+  }
+
+  utilUpdateBrushSmoothing(event: Event) {
+    const smoothing = parseInt((event.target as HTMLInputElement).value);
+    this.bannerService.brushSmoothing.set(smoothing);
+    this.bannerService.setBrushType(this.bannerService.brushType());
+  }
+
+  utilUpdateBrushSize(event: Event) {
+    const size = parseInt((event.target as HTMLInputElement).value);
+    this.bannerService.updateBrushSize(size);
   }
 
   utilUpdateBrushColor(event: any) {
@@ -80,9 +104,17 @@ export class NavbarComponent {
     this.bannerService.toggleEraser();
   }
 
+  clearDrawings() {
+    this.bannerService.clearDrawings();
+  }
+
   setSelectMode() {
     this.bannerService.toggleDrawingMode(false);
     this.bannerService.toggleEraser(false);
+    // Close the draw sidebar if it was open
+    if (this.bannerService.activeTab() === 'draw') {
+      this.bannerService.activeTab.set('');
+    }
   }
 
   undo() { this.bannerService.undo(); }
@@ -175,6 +207,16 @@ export class NavbarComponent {
         this.closeMenus();
       }
     });
+  }
+
+  /**
+   * Export all saved templates/designs/backgrounds as a portable JSON file.
+   * That file can be placed in public/ready_made_templates.json and redeployed
+   * so every new visitor sees the items automatically.
+   */
+  async exportLibrary() {
+    this.closeMenus();
+    await this.bannerService.exportLibraryToJSON();
   }
 
   toggleLanguage(lang: 'en' | 'mr') {

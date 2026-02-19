@@ -1,5 +1,8 @@
 import { Injectable } from '@angular/core';
-import Sanscript from '@indic-transliteration/sanscript';
+import * as _Sanscript from '@indic-transliteration/sanscript';
+
+// Handle both standard ESM and CommonJS/UMD import styles
+const Sanscript = (_Sanscript as any).default || _Sanscript;
 
 @Injectable({
     providedIn: 'root',
@@ -16,6 +19,10 @@ export class TransliterationService {
         // We use a regex that captures Latin words that might be mixed with already transliterated Marathi.
         return text.replace(/([\u0900-\u097FA-Za-z0-9'_\^]*[A-Za-z][\u0900-\u097FA-Za-z0-9'_\^]*)/g, (match) => {
             try {
+                if (!Sanscript || typeof Sanscript.t !== 'function') {
+                    console.warn('[TransliterationService] Sanscript.t not available');
+                    return match;
+                }
                 // If it contains Marathi characters, convert to ITRANS first
                 const isMixed = /[\u0900-\u097F]/.test(match);
                 const itransWord = isMixed ? this.toItrans(match) : match;
@@ -33,7 +40,7 @@ export class TransliterationService {
      * Useful for "re-reading" partially typed words.
      */
     public toItrans(text: string): string {
-        if (!text) return '';
+        if (!text || !Sanscript || typeof Sanscript.t !== 'function') return text || '';
         return Sanscript.t(text, 'devanagari', 'itrans');
     }
 
@@ -43,6 +50,10 @@ export class TransliterationService {
      */
     public phoneticMarathi(input: string): string {
         if (!input) return '';
+        if (!Sanscript || typeof Sanscript.t !== 'function') {
+            console.error('[TransliterationService] Sanscript library not loaded correctly');
+            return input;
+        }
 
         // Allow case-sensitive input for precise mapping
         // Pre-process common phonetic patterns for natural Marathi feel

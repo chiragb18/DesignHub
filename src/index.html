@@ -5,18 +5,75 @@
   <meta charset="utf-8">
   <title>DesignHub</title>
   <base href="/">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Responsive viewport: prevents zoom on iOS, enforces device-width layout -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+
+  <!-- PWA / Mobile Web App meta -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="DesignHub">
+  <meta name="theme-color" content="#7c3aed">
+
+  <!-- SEO -->
+  <meta name="description" content="DesignHub – a free, powerful banner and design editor that works on any device.">
+
+  <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="designHub-logo.png">
+  <link rel="apple-touch-icon" href="designHub-logo.png">
+
+  <!-- Fonts: preconnect for speed -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Google Fonts – loaded with display=swap for better LCP -->
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&family=Roboto:wght@300;400;500;700&family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&family=Lato:wght@300;400;700&family=Open+Sans:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Nunito:wght@300;400;600;700&family=Oswald:wght@300;400;500;600;700&family=Hind:wght@300;400;500;600;700&family=Teko:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;700&family=Pacifico&family=Shrikhand&family=Dancing+Script:wght@400;500;600;700&family=Lobster&family=Caveat:wght@400;500;600;700&family=Kanit:wght@300;400;500;600;700&family=Righteous&family=Anton&family=Bangers&family=Permanent+Marker&family=Satisfy&family=Kaushan+Script&family=Courgette&family=Merienda:wght@400;700&family=Great+Vibes&family=Cinzel:wght@400;700&family=Comfortaa:wght@300;400;500;600;700&family=Quicksand:wght@300;400;500;600;700&family=Fredoka+One&family=Lobster+Two:wght@400;700&family=Cookie&family=Sacramento&family=Yellowtail&family=Mr+Dafoe&family=Pinyon+Script&family=Rochester&family=Grand+Hotel&family=Homemade+Apple&family=Yesteryear&family=Petit+Formal+Script&display=swap"
     rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
     rel="stylesheet">
+
+  <style>
+    /* Minimal inlined reset – avoids FOUC and handles safe areas */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    /* Respect device safe areas (e.g. iPhone notch / home indicator) */
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+
+    /* Splash / loading indicator before Angular bootstraps */
+    app-root:empty::after {
+      content: '';
+      display: block;
+      position: fixed;
+      inset: 0;
+      background: #ffffff;
+    }
+  </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark text-[#140e1b] dark:text-[#faf8fc]">
+<body>
   <app-root></app-root>
 </body>
 

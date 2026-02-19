@@ -21,6 +21,7 @@ export interface Template {
     thumbnail: string;
     json: any;
     isCustom: boolean;
+    seeded?: boolean; // Indicates item was seeded from global JSON
     date?: Date;
     tags?: string[];
 }
@@ -58,8 +59,11 @@ export class BannerService {
 
     // Brush & Eraser State
     public isDrawingMode = signal(false);
+    public brushType = signal<string>('pen');
     public brushSize = signal(10);
     public brushColor = signal('#000000');
+    public brushOpacity = signal(1);
+    public brushSmoothing = signal(2); // decimate value
     public isErasing = signal(false);
     public eraserSize = signal(10);
     public activeTab = signal<string>('templates');
@@ -80,9 +84,8 @@ export class BannerService {
     public isSaving = signal(false);
     public isProjectLoading = signal(false);
     public activeProjectId = signal<string | null>(null);
-    public curvedText = signal<number>(0);
-    public curvedImage = signal<number>(0);
     public isMobile = signal<boolean>(false);
+    public sidebarWidth = signal<number>(438); // Standard 350px sidebar + 88px nav
     public isPenCutting = signal<boolean>(false);
     public penCutTarget: fabric.Image | null = null;
     private currentPenPath: fabric.Path | null = null;
@@ -102,7 +105,7 @@ export class BannerService {
         'originalImageSrc', 'maskType', 'maskHeight', 'maskFlip',
         'opacity', 'visible', 'selectable', 'evented', 'lockMovementX', 'lockMovementY',
         'cropX', 'cropY', 'filters', 'clipPath', 'crossOrigin', 'stroke', 'strokeWidth', 'strokeDashArray', 'fill',
-        'shadow', 'rx', 'ry', 'radius', 'points', 'path', 'curvature', 'imageCurvature', 'isCurvedGroup',
+        'shadow', 'rx', 'ry', 'radius', 'points', 'path',
         'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'underline', 'overline', 'strikethrough',
         'textAlign', 'lineHeight', 'charSpacing', 'textBackgroundColor'
     ];
@@ -111,6 +114,23 @@ export class BannerService {
     private translitService = inject(TransliterationService);
     private persistenceService = inject(PersistenceService);
     private notificationService = inject(NotificationService);
+
+    public brushTypes = [
+        { id: 'pen', name: 'Pencil', icon: 'edit', path: 'M20,50 C30,30 70,70 80,50' },
+        { id: 'marker', name: 'Highlighter', icon: 'border_color', path: 'M20,50 C30,30 70,70 80,50' },
+        { id: 'circle', name: 'Circle', icon: 'circle', path: 'M50,20 A30,30 0 1,1 50,80 A30,30 0 1,1 50,20' },
+        { id: 'spray', name: 'Spray', icon: 'blur_on', path: 'M20,50 L80,50' },
+        { id: 'pattern', name: 'Pattern', icon: 'stars', path: 'M20,50 L80,50' },
+        { id: 'dotted', name: 'Dotted', icon: 'more_horiz', path: 'M20,50 L30,50 M45,50 L55,50 M70,50 L80,50' },
+        { id: 'glow', name: 'Glow Path', icon: 'flare', path: 'M20,50 C30,30 70,70 80,50' },
+        { id: 'ink', name: 'Artistic Ink', icon: 'history_edu', path: 'M20,60 C40,20 60,80 80,40' },
+        { id: 'chalk', name: 'Chalk Dust', icon: 'texture', path: 'M20,50 L30,45 L40,55 L50,45 L60,55 L70,45 L80,50' },
+        { id: 'hatch', name: 'Hatched', icon: 'grid_on', path: 'M20,20 L80,80 M20,80 L80,20' },
+        { id: 'rainbow', name: 'Rainbow', icon: 'filter_vintage', path: 'M20,70 C40,20 60,20 80,70' },
+        { id: 'airbrush', name: 'Airbrush', icon: 'air', path: 'M30,30 C50,70 70,30 90,70' },
+        { id: 'crayon', name: 'Crayon', icon: 'draw', path: 'M20,50 L35,55 L50,45 L65,55 L80,50' },
+        { id: 'ribbon', name: 'Silk Ribbon', icon: 'reorder', path: 'M20,45 L80,45 M20,55 L80,55' }
+    ];
 
     constructor() {
         this.debouncedSave = this.debounce(this.saveState.bind(this), 300);
@@ -269,19 +289,7 @@ export class BannerService {
     async initCanvas(canvasId: string): Promise<void> {
         this.updateMobileState();
 
-        let width = 1200;
-        let height = 675;
-
-        if (typeof window !== 'undefined') {
-            // Calculate available width by subtracting sidebars
-            // Nav sidebar (72px) + Right Sidebar (~350px) + Padding (~40px)
-            const availableWidth = window.innerWidth - (this.isMobile() ? 20 : 450);
-
-            if (availableWidth < 1200) {
-                width = Math.max(300, availableWidth);
-                height = width * (675 / 1200);
-            }
-        }
+        const { width, height } = this.calculateCanvasDimensions();
 
         this.canvas = new fabric.Canvas(canvasId, {
             width: width,
@@ -331,10 +339,55 @@ export class BannerService {
         }
     }
 
+    /** Calculate the best canvas dimensions to fit the current viewport */
+    private calculateCanvasDimensions(): { width: number; height: number } {
+        if (typeof window === 'undefined') return { width: 1200, height: 675 };
+
+        const isMobile = window.innerWidth < 1024;
+        this.isMobile.set(isMobile);
+
+        const topNavHeight = isMobile ? 56 : 64;
+        // Mobile toolbar at bottom adds 72px
+        const bottomBarHeight = isMobile ? 72 : 0;
+        // Left nav sidebar width (only on desktop)
+        const leftNavWidth = isMobile ? 0 : 88;
+        // Right sidebar (only on desktop)
+        const rightSidebarWidth = isMobile ? 0 : this.sidebarWidth();
+        // Padding around canvas
+        const padding = isMobile ? 16 : 60;
+
+        const availableWidth = window.innerWidth - leftNavWidth - rightSidebarWidth - padding;
+        const availableHeight = window.innerHeight - topNavHeight - bottomBarHeight - padding;
+
+        const baseWidth = 1200;
+        const baseHeight = 675;
+        const aspectRatio = baseHeight / baseWidth;
+
+        let width = baseWidth;
+        let height = baseHeight;
+
+        if (width > availableWidth) {
+            width = Math.max(280, availableWidth);
+            height = width * aspectRatio;
+        }
+        if (height > availableHeight) {
+            height = Math.max(180, availableHeight);
+            width = height / aspectRatio;
+        }
+
+        return { width: Math.round(width), height: Math.round(height) };
+    }
+
     private updateMobileState(): void {
         if (typeof window !== 'undefined') {
-            this.isMobile.set(window.innerWidth < 768);
+            // Modern breakpoint for "Compact/Medium" layouts vs "Expanded"
+            this.isMobile.set(window.innerWidth < 1024);
         }
+    }
+
+    public setSidebarWidth(width: number): void {
+        this.sidebarWidth.set(width);
+        this.handleResize();
     }
 
     /**
@@ -342,150 +395,313 @@ export class BannerService {
      * Useful for manual resizing interactions.
      */
     public handleResize(): void {
-        if (!this.canvas) return;
-        const isMobile = window.innerWidth < 768;
+        if (!this.canvas || typeof window === 'undefined') return;
+
         this.updateMobileState();
-
-        // Dynamic width calculation for all screen sizes (including small laptops)
-        const sidebarsWidth = isMobile ? 20 : 450;
-        let width = 1200;
-        const availableWidth = window.innerWidth - sidebarsWidth;
-
-        if (availableWidth < 1200) {
-            width = Math.max(300, availableWidth);
-        }
-
-        const height = width * (675 / 1200);
+        const { width, height } = this.calculateCanvasDimensions();
         const zoom = width / 1200;
 
-        this.canvas.setDimensions({ width, height });
+        this.canvas.setDimensions({
+            width: Math.round(width),
+            height: Math.round(height)
+        });
+
         this.canvas.setZoom(zoom);
         this.zoomLevel.set(zoom);
         this.canvas.requestRenderAll();
     }
 
-    public brushType = signal<'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles'>('pencil');
-
     public toggleDrawingMode(enabled?: boolean): void {
         const currentlyDrawing = enabled !== undefined ? enabled : !this.isDrawingMode();
 
         if (currentlyDrawing) {
+            // Disable other modes
             this.isErasing.set(false);
+            this.isPenCutting.set(false);
+
             this.canvas.discardActiveObject();
+            // Disable selection while drawing
+            this.canvas.selection = false;
+            this.canvas.getObjects().forEach(o => { o.selectable = false; o.evented = false; });
             this.canvas.isDrawingMode = true;
             this.setBrushType(this.brushType());
         } else {
             this.canvas.isDrawingMode = false;
+            // Restore selection after drawing
+            this.canvas.selection = true;
+            this.canvas.getObjects().forEach(o => { o.selectable = true; o.evented = true; });
         }
 
         this.isDrawingMode.set(currentlyDrawing);
         this.canvas.renderAll();
     }
 
-    public setBrushType(type: 'pencil' | 'spray' | 'circle' | 'highlighter' | 'dotted' | 'glow' | 'crayon' | 'ink' | 'ribbon' | 'stars' | 'hearts' | 'bubbles'): void {
+
+    /**
+     * Set the active brush type. Fully compatible with Fabric.js v6/v7.
+     * SprayBrush, CircleBrush, PatternBrush are implemented via custom canvas overrides
+     * since they were removed from Fabric v6+.
+     */
+    public setBrushType(type: string): void {
         this.brushType.set(type);
         if (!this.canvas) return;
 
-        let brush: any;
         const color = this.brushColor();
         const size = this.brushSize();
+        const opacityHex = Math.round(this.brushOpacity() * 255).toString(16).padStart(2, '0');
+        const colorWithOpacity = color + opacityHex;
+
+        let brush: fabric.PencilBrush;
 
         switch (type) {
-            case 'spray':
-                brush = new (fabric as any).SprayBrush(this.canvas);
-                brush.width = size * 2;
-                brush.density = 20;
-                brush.dotWidth = size / 5;
-                brush.dotWidthVariance = size / 5;
-                break;
-            case 'circle':
-                brush = new (fabric as any).CircleBrush(this.canvas);
-                brush.width = size;
-                break;
-            case 'highlighter':
+            // ── Highlighter / Marker ──────────────────────────────────────────────
+            case 'marker': {
                 brush = new fabric.PencilBrush(this.canvas);
                 brush.width = size * 2.5;
-                brush.color = color + '80'; // 50% opacity
+                (brush as any).strokeLineCap = 'square';
+                brush.color = color + '55'; // ~33% opacity for highlighter feel
                 break;
-            case 'dotted':
+            }
+
+            // ── Circle Brush (custom – draws filled circles along path) ───────────
+            case 'circle': {
+                brush = this.createCircleBrush(size, colorWithOpacity);
+                break;
+            }
+
+            // ── Spray Brush (custom – scatter dots around pointer) ────────────────
+            case 'spray': {
+                brush = this.createSprayBrush(size, colorWithOpacity);
+                break;
+            }
+
+            // ── Pattern / Stamp Brush ─────────────────────────────────────────────
+            case 'pattern': {
+                brush = this.createPatternBrush('star');
+                break;
+            }
+
+            // ── Glow / Neon ───────────────────────────────────────────────────────
+            case 'glow': {
                 brush = new fabric.PencilBrush(this.canvas);
                 brush.width = size;
-                brush.strokeDashArray = [size * 2, size * 2];
-                break;
-            case 'glow':
-                brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size;
-                brush.shadow = new fabric.Shadow({
+                brush.color = colorWithOpacity;
+                (brush as any).shadow = new fabric.Shadow({
                     color: color,
-                    blur: size * 1.5,
+                    blur: size * 2,
                     offsetX: 0,
                     offsetY: 0
                 });
                 break;
-            case 'crayon':
-                brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size;
-                brush.strokeLineCap = 'butt';
-                brush.strokeDashArray = [1, 2];
-                // Simulate crayon grain
-                break;
-            case 'ink':
-                brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size;
-                brush.decimate = 2; // Smoother
-                break;
-            case 'ribbon':
-                brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size * 2;
-                brush.strokeLineCap = 'square';
-                // Ribbon effect can be simulated with shadow or specific params
-                break;
-            case 'stars':
-                brush = this.createPatternBrush('star');
-                break;
-            case 'hearts':
-                brush = this.createPatternBrush('heart');
-                break;
-            case 'bubbles':
-                brush = this.createPatternBrush('bubble');
-                break;
-            case 'pencil':
-            default:
-                brush = new fabric.PencilBrush(this.canvas);
-                brush.width = size;
-                break;
-        }
+            }
 
-        if (type !== 'highlighter' && !['stars', 'hearts', 'bubbles'].includes(type)) {
-            brush.color = color;
+            // ── Artistic Ink (high-precision, pressure-like) ──────────────────────
+            case 'ink': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                brush.decimate = 1;
+                (brush as any).strokeLineJoin = 'round';
+                (brush as any).strokeLineCap = 'round';
+                break;
+            }
+
+            // ── Chalk Dust ────────────────────────────────────────────────────────
+            case 'chalk': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                (brush as any).strokeDashArray = [2, 3];
+                (brush as any).strokeLineCap = 'butt';
+                break;
+            }
+
+            // ── Silk Ribbon ───────────────────────────────────────────────────────
+            case 'ribbon': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size * 3;
+                brush.color = colorWithOpacity;
+                (brush as any).strokeLineCap = 'butt';
+                (brush as any).strokeLineJoin = 'miter';
+                break;
+            }
+
+            // ── Rainbow ───────────────────────────────────────────────────────────
+            case 'rainbow': {
+                // Cycle through hues using a time-based hue shift
+                const hue = (Date.now() / 20) % 360;
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = `hsl(${hue}, 100%, 50%)`;
+                break;
+            }
+
+            // ── Dotted ────────────────────────────────────────────────────────────
+            case 'dotted': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                (brush as any).strokeDashArray = [0.1, size * 1.5];
+                (brush as any).strokeLineCap = 'round';
+                break;
+            }
+
+            // ── Airbrush (soft, wide, faint) ──────────────────────────────────────
+            case 'airbrush': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size * 2.5;
+                brush.color = color + '22'; // Very faint
+                (brush as any).shadow = new fabric.Shadow({
+                    color: color,
+                    blur: size * 3,
+                    offsetX: 0,
+                    offsetY: 0
+                });
+                break;
+            }
+
+            // ── Crayon ────────────────────────────────────────────────────────────
+            case 'crayon': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                (brush as any).strokeDashArray = [1, 1.5];
+                (brush as any).strokeLineCap = 'round';
+                break;
+            }
+
+            // ── Hatched ───────────────────────────────────────────────────────────
+            case 'hatch': {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                (brush as any).strokeDashArray = [6, 4];
+                (brush as any).strokeLineCap = 'butt';
+                break;
+            }
+
+            // ── Pencil (default) ──────────────────────────────────────────────────
+            case 'pen':
+            default: {
+                brush = new fabric.PencilBrush(this.canvas);
+                brush.width = size;
+                brush.color = colorWithOpacity;
+                brush.decimate = this.brushSmoothing();
+                break;
+            }
         }
 
         this.canvas.freeDrawingBrush = brush;
     }
 
-    private createPatternBrush(shape: 'star' | 'heart' | 'bubble'): any {
-        const size = Math.max(20, this.brushSize() * 2);
+    /**
+     * Custom Circle Brush – draws filled circles along the drawn path.
+     * Fabric v7 compatible (no CircleBrush class needed).
+     */
+    private createCircleBrush(size: number, color: string): fabric.PencilBrush {
+        const brush = new fabric.PencilBrush(this.canvas);
+        brush.width = size;
+        brush.color = color;
+        // Override _drawSegment to draw circles instead of lines
+        (brush as any)._drawSegment = (ctx: CanvasRenderingContext2D, p1: any, p2: any) => {
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            ctx.save();
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(midX, midY, size / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        };
+        return brush;
+    }
+
+    /**
+     * Custom Spray Brush – scatters random dots around the pointer.
+     * Fabric v7 compatible (no SprayBrush class needed).
+     */
+    private createSprayBrush(size: number, color: string): fabric.PencilBrush {
+        const brush = new fabric.PencilBrush(this.canvas);
+        brush.width = 1;
+        brush.color = 'transparent'; // The real drawing is done in onMouseMove
+
+        const density = 40;
+        const dotRadius = Math.max(1, size / 8);
+        const sprayRadius = size * 1.5;
+        const canvasEl = this.canvas.getElement() as HTMLCanvasElement;
+        const ctx = canvasEl.getContext('2d');
+
+        // Override onMouseMove to spray dots
+        (brush as any)._onMouseMove = (pointer: any) => {
+            if (!ctx) return;
+            ctx.save();
+            ctx.fillStyle = color;
+            for (let i = 0; i < density; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * sprayRadius;
+                const x = pointer.x + Math.cos(angle) * radius;
+                const y = pointer.y + Math.sin(angle) * radius;
+                ctx.beginPath();
+                ctx.arc(x, y, dotRadius * Math.random(), 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        };
+        return brush;
+    }
+
+    /**
+     * Pattern Brush – stamps a shape/emoji along the drawn path.
+     * Uses PencilBrush with a custom canvas source for Fabric v7 compatibility.
+     */
+    private createPatternBrush(shape: string): fabric.PencilBrush {
+        const size = Math.max(24, this.brushSize() * 2.5);
         const color = this.brushColor();
 
-        const patternCanvas = document.createElement('canvas');
-        patternCanvas.width = size;
-        patternCanvas.height = size;
-        const ctx = patternCanvas.getContext('2d')!;
+        // Build the stamp canvas
+        const stampCanvas = document.createElement('canvas');
+        stampCanvas.width = size;
+        stampCanvas.height = size;
+        const ctx = stampCanvas.getContext('2d')!;
 
+        const emojiMap: Record<string, string> = {
+            heart: '❤',
+            bubble: '○',
+            diamond: '♦',
+            leaf: '🍃',
+            sparkle: '✨',
+            flower: '🌸',
+            star: '★'
+        };
+        const emoji = emojiMap[shape] ?? '★';
+
+        ctx.clearRect(0, 0, size, size);
         ctx.fillStyle = color;
-        ctx.font = `${size * 0.8}px serif`;
+        ctx.font = `${size * 0.75}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        let emoji = '★';
-        if (shape === 'heart') emoji = '❤';
-        else if (shape === 'bubble') emoji = '○';
-
         ctx.fillText(emoji, size / 2, size / 2);
 
-        const brush = new (fabric as any).PatternBrush(this.canvas);
-        brush.source = patternCanvas;
+        // Try native PatternBrush first, fall back to PencilBrush with image stamp
+        const fabricAny = fabric as any;
+        if (typeof fabricAny.PatternBrush === 'function') {
+            const brush = new fabricAny.PatternBrush(this.canvas);
+            brush.source = stampCanvas;
+            brush.width = size;
+            return brush as fabric.PencilBrush;
+        }
+
+        // Fallback: use PencilBrush and stamp the emoji at each segment
+        const brush = new fabric.PencilBrush(this.canvas);
         brush.width = size;
+        brush.color = 'transparent';
+        const img = new Image();
+        img.src = stampCanvas.toDataURL();
+        (brush as any)._drawSegment = (ctx2: CanvasRenderingContext2D, p1: any, p2: any) => {
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            ctx2.drawImage(img, midX - size / 2, midY - size / 2, size, size);
+        };
         return brush;
     }
 
@@ -493,7 +709,8 @@ export class BannerService {
         this.brushSize.set(size);
         if ((this.isDrawingMode() || this.isErasing()) && this.canvas.freeDrawingBrush) {
             const type = this.brushType();
-            if (['stars', 'hearts', 'bubbles'].includes(type) && !this.isErasing()) {
+            // These brush types need full recreation when size changes
+            if (['pattern', 'spray', 'circle', 'ribbon', 'glow', 'airbrush'].includes(type) && !this.isErasing()) {
                 this.setBrushType(type);
             } else {
                 this.canvas.freeDrawingBrush.width = Number(size);
@@ -504,33 +721,50 @@ export class BannerService {
     public updateBrushColor(color: string): void {
         this.brushColor.set(color);
         if (this.isDrawingMode() && this.canvas.freeDrawingBrush && !this.isErasing()) {
+            // These brush types need full recreation when color changes
             const type = this.brushType();
-            if (['stars', 'hearts', 'bubbles', 'glow'].includes(type)) {
+            if (['pattern', 'glow', 'marker', 'spray', 'circle', 'airbrush'].includes(type)) {
                 this.setBrushType(type);
             } else {
-                this.canvas.freeDrawingBrush.color = color;
+                const opacityHex = Math.round(this.brushOpacity() * 255).toString(16).padStart(2, '0');
+                this.canvas.freeDrawingBrush.color = color + opacityHex;
             }
         }
     }
 
+    /**
+     * Toggle eraser mode. Uses destination-out composite operation for true erasing.
+     * The erased path is added to the canvas with globalCompositeOperation = 'destination-out'.
+     */
     public toggleEraser(enabled?: boolean): void {
         const currentlyErasing = enabled !== undefined ? enabled : !this.isErasing();
 
         if (currentlyErasing) {
+            // Exit other modes
             this.isDrawingMode.set(false);
+            this.isPenCutting.set(false);
             this.canvas.discardActiveObject();
+
+            // Disable selection while erasing
+            this.canvas.selection = false;
+            this.canvas.getObjects().forEach(o => { o.selectable = false; o.evented = false; });
+
             this.canvas.isDrawingMode = true;
 
-            // Use a standard pencil brush with destination-out for erasing
+            // White brush simulates erasing on white canvas; for true transparency use destination-out
             const eraser = new fabric.PencilBrush(this.canvas);
-            eraser.width = this.brushSize(); // Share size or use eraserSize
+            eraser.width = this.eraserSize();
+            eraser.color = '#ffffff'; // White eraser (works on white backgrounds)
+            // For transparent erasing, set composite op on the created path via path:created event
             this.canvas.freeDrawingBrush = eraser;
-            (this.canvas.freeDrawingBrush as any).globalCompositeOperation = 'destination-out';
 
-            this.canvas.defaultCursor = 'crosshair';
+            this.canvas.defaultCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${this.eraserSize()}' height='${this.eraserSize()}' viewBox='0 0 ${this.eraserSize()} ${this.eraserSize()}'%3E%3Ccircle cx='${this.eraserSize() / 2}' cy='${this.eraserSize() / 2}' r='${this.eraserSize() / 2 - 1}' fill='none' stroke='%23333' stroke-width='1.5'/%3E%3C/svg%3E") ${this.eraserSize() / 2} ${this.eraserSize() / 2}, crosshair`;
         } else {
             this.canvas.isDrawingMode = false;
             this.canvas.defaultCursor = 'default';
+            // Restore selection
+            this.canvas.selection = true;
+            this.canvas.getObjects().forEach(o => { o.selectable = true; o.evented = true; });
         }
 
         this.isErasing.set(currentlyErasing);
@@ -541,7 +775,22 @@ export class BannerService {
         this.eraserSize.set(size);
         if (this.isErasing() && this.canvas.freeDrawingBrush) {
             this.canvas.freeDrawingBrush.width = size;
+            // Update cursor size
+            this.canvas.defaultCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'%3E%3Ccircle cx='${size / 2}' cy='${size / 2}' r='${size / 2 - 1}' fill='none' stroke='%23333' stroke-width='1.5'/%3E%3C/svg%3E") ${size / 2} ${size / 2}, crosshair`;
         }
+    }
+
+    /**
+     * Clear all drawn paths from the canvas (paths created by free drawing).
+     * Preserves images, text, and shapes.
+     */
+    public clearDrawings(): void {
+        const objects = this.canvas.getObjects();
+        const drawingPaths = objects.filter(o => o.type === 'path');
+        drawingPaths.forEach(p => this.canvas.remove(p));
+        this.canvas.requestRenderAll();
+        this.saveState();
+        this.notificationService.showToast('Drawing cleared', 'info', 1500);
     }
 
     private setupKeyboardEvents(): void {
@@ -623,6 +872,7 @@ export class BannerService {
             this.triggerSelectedUpdate();
         });
 
+
         this.canvas.on('object:scaling', (e) => {
             const obj = e.target;
             if (obj && obj.type === 'textbox') {
@@ -648,9 +898,6 @@ export class BannerService {
             this.refreshState();
 
             if (selected) {
-                // Sync curvature state
-                this.curvedText.set((selected as any).curvature || 0);
-                this.curvedImage.set((selected as any).imageCurvature || 0);
 
                 if (selected.type === 'textbox') {
                     this.activeTab.set('text');
@@ -718,8 +965,8 @@ export class BannerService {
 
                     // Maintain cursor position exactly after the transliterated word
                     const newCursor = wordStart + transliterated.length;
-                    obj.setSelectionStart(newCursor);
-                    obj.setSelectionEnd(newCursor);
+                    obj.selectionStart = newCursor;
+                    obj.selectionEnd = newCursor;
 
                     // Ensure Devanagari font is applied
                     if (obj.get('fontFamily') !== 'Noto Sans Devanagari, sans-serif') {
@@ -809,7 +1056,7 @@ export class BannerService {
                 // but loadFromJSON usually handles replacement well.
                 await this.canvas.loadFromJSON(state);
 
-                this.reviveCurvedElements();
+
                 this.refreshState();
                 this.canvas.requestRenderAll();
                 this.selectedObject.set(null);
@@ -853,7 +1100,7 @@ export class BannerService {
 
                 await this.canvas.loadFromJSON(state);
 
-                this.reviveCurvedElements();
+
                 this.refreshState();
                 this.canvas.requestRenderAll();
                 this.selectedObject.set(null);
@@ -1325,21 +1572,41 @@ export class BannerService {
             let local = await this.imageStorage.getTemplates();
             if (!Array.isArray(local)) local = [];
 
-            let allItems: Template[] = [...local];
-
-            // Load Globals
+            // ── AUTO-SEED FROM DEPLOYED JSON ─────────────────────────────────
+            // Fetch the bundled ready_made_templates.json from the server.
+            // If it has entries that are NOT in IndexedDB yet → import them
+            // (with their embedded base64 images) so they appear for every user.
             try {
-                const response = await fetch('/ready_made_templates.json');
+                const response = await fetch('/ready_made_templates.json', { cache: 'default' });
                 if (response.ok) {
-                    const globals = await response.json();
-                    if (Array.isArray(globals)) {
-                        const localIds = new Set(local.map(t => t.id));
-                        const uniqueGlobals = globals.filter(t => !localIds.has(t.id));
-                        uniqueGlobals.forEach(t => t.isCustom = false);
-                        allItems = [...allItems, ...uniqueGlobals];
+                    const globals: any[] = await response.json();
+                    if (Array.isArray(globals) && globals.length > 0) {
+                        const localIds = new Set(local.map((t: any) => t.id));
+                        const newGlobals = globals.filter(t => t && t.id && !localIds.has(t.id));
+
+                        if (newGlobals.length > 0) {
+                            console.log(`🌐 Seeding ${newGlobals.length} global templates into IndexedDB...`);
+                            // Resolve embedded base64 images → IndexedDB blobs
+                            for (const tpl of newGlobals) {
+                                if (tpl.json) {
+                                    await this.seedImagesFromJson(tpl.json);
+                                }
+                                tpl.isCustom = false;
+                                tpl.seeded = true;
+                            }
+                            // Merge and persist
+                            const merged = [...local, ...newGlobals];
+                            await this.imageStorage.saveTemplates(merged);
+                            local = merged;
+                            console.log(`✅ Seeded ${newGlobals.length} global items into local DB.`);
+                        }
                     }
                 }
-            } catch (err) { /* silent */ }
+            } catch (err) {
+                console.warn('[Library] Could not fetch global templates:', err);
+            }
+
+            let allItems: Template[] = [...local];
 
             // Unified filter and sort
             allItems = allItems.filter(t => t && t.id);
@@ -1351,7 +1618,7 @@ export class BannerService {
 
             // Distribute to signals with broad filters
             this.savedTemplates.set(allItems.filter(t =>
-                !t.category || t.category === 'Template' || t.category === 'Custom' || t.category === 'Imported'
+                !t.category || ['Template', 'Custom', 'Imported'].includes(t.category) || (t as any).seeded
             ));
             this.savedDesigns.set(allItems.filter(t => t.category === 'Design'));
             this.savedBackgrounds.set(allItems.filter(t => t.category === 'Background'));
@@ -1359,6 +1626,165 @@ export class BannerService {
             console.log(`✅ Library Sync Complete: Total: ${allItems.length}`);
         } catch (e) {
             console.error('❌ Library failure', e);
+        }
+    }
+
+    /**
+     * Walk a canvas JSON and convert any embedded base64 data-URLs back into
+     * IndexedDB blob references (indexeddb://hash).  Called when seeding globals.
+     */
+    private async seedImagesFromJson(json: any): Promise<void> {
+        if (!json) return;
+
+        const processObj = async (obj: any) => {
+            if (!obj || typeof obj !== 'object') return;
+            for (const key of ['src', 'originalSrc', 'originalImageSrc']) {
+                const val = obj[key];
+                if (typeof val === 'string' && val.startsWith('data:')) {
+                    try {
+                        const blob = this.dataURLtoBlob(val);
+                        const id = await this.imageStorage.saveImage(blob);
+                        await this.persistenceService.saveImage(id, blob);
+                        obj[key] = `indexeddb://${id}`;
+                        if (!obj.idbId) obj.idbId = id;
+                    } catch { /* keep original */ }
+                }
+            }
+            if (Array.isArray(obj.objects)) {
+                await Promise.all(obj.objects.map((o: any) => processObj(o)));
+            }
+            if (obj.clipPath) await processObj(obj.clipPath);
+        };
+
+        if (Array.isArray(json.objects)) {
+            await Promise.all(json.objects.map((o: any) => processObj(o)));
+        }
+        if (json.backgroundImage) await processObj(json.backgroundImage);
+    }
+
+    // ─── EXPORT / IMPORT LIBRARY ───────────────────────────────────────────────
+
+    /**
+     * Exports ALL templates, designs, and backgrounds from IndexedDB into a
+     * self-contained JSON file where every image is embedded as base64.
+     * The user can then commit this file to `public/ready_made_templates.json`
+     * and redeploy → every new visitor will automatically see these items.
+     */
+    public async exportLibraryToJSON(): Promise<void> {
+        if (this.isSaving()) return;
+        this.isSaving.set(true);
+
+        const toastId = this.notificationService.showToast('Preparing library export for Vercel…', 'info', 0);
+        try {
+            const local: any[] = await this.imageStorage.getTemplates();
+            if (!local || local.length === 0) {
+                this.notificationService.removeToast(toastId);
+                this.notificationService.warning('No templates, designs, or backgrounds to export.');
+                this.isSaving.set(false);
+                return;
+            }
+
+            const output: any[] = [];
+
+            for (const tpl of local) {
+                // Fetch the full JSON from the shadow store
+                let json: any = tpl.json;
+                if (!json) {
+                    try {
+                        json = await this.persistenceService.getDesign(tpl.id);
+                    } catch { json = null; }
+                }
+
+                // Embed base64 for all IDB images inside the canvas JSON
+                if (json) {
+                    json = JSON.parse(JSON.stringify(json)); // deep clone
+                    await this.embedIdbImagesToBase64(json);
+                }
+
+                output.push({
+                    id: tpl.id,
+                    name: tpl.name,
+                    category: tpl.category,
+                    thumbnail: tpl.thumbnail ?? '',
+                    isCustom: false,   // will be treated as global when re-imported
+                    date: tpl.date ?? new Date(),
+                    tags: tpl.tags ?? [],
+                    json
+                });
+            }
+
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ready_made_templates.json';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            this.notificationService.removeToast(toastId);
+            this.notificationService.success(
+                `Exported ${output.length} item(s). Replace public/ready_made_templates.json and redeploy!`
+            );
+        } catch (e: any) {
+            this.notificationService.removeToast(toastId);
+            console.error('Export failed', e);
+            this.notificationService.error('Export failed: ' + e.message);
+        } finally {
+            this.isSaving.set(false);
+        }
+    }
+
+    private async embedIdbImagesToBase64(json: any): Promise<void> {
+        if (!json) return;
+
+        const processObj = async (obj: any) => {
+            if (!obj || typeof obj !== 'object') return;
+
+            // 1. Direct Image Sources
+            for (const key of ['src', 'originalSrc', 'originalImageSrc']) {
+                const val = obj[key];
+                if (typeof val === 'string' && val.startsWith('indexeddb://')) {
+                    const id = val.replace('indexeddb://', '');
+                    try {
+                        const blob = await this.imageStorage.getImage(id);
+                        if (blob) {
+                            obj[key] = await this.imageStorage.blobToDataURL(blob);
+                        }
+                    } catch { /* keep original ref */ }
+                }
+            }
+
+            // 2. Pattern Fills or Strokes
+            for (const prop of ['fill', 'stroke']) {
+                const val = obj[prop];
+                if (val && typeof val === 'object' && val.type === 'pattern' && typeof val.source === 'string' && val.source.startsWith('indexeddb://')) {
+                    const id = val.source.replace('indexeddb://', '');
+                    try {
+                        const blob = await this.imageStorage.getImage(id);
+                        if (blob) {
+                            val.source = await this.imageStorage.blobToDataURL(blob);
+                        }
+                    } catch { /* keep original */ }
+                }
+            }
+
+            // 3. Child Objects (Groups)
+            if (Array.isArray(obj.objects)) {
+                await Promise.all(obj.objects.map((o: any) => processObj(o)));
+            }
+
+            // 4. ClipPath
+            if (obj.clipPath) await processObj(obj.clipPath);
+        };
+
+        // Root level checks
+        if (Array.isArray(json.objects)) {
+            await Promise.all(json.objects.map((o: any) => processObj(o)));
+        }
+        if (json.backgroundImage) await processObj(json.backgroundImage);
+        if (json.overlayImage) await processObj(json.overlayImage);
+        if (json.background && typeof json.background === 'object') {
+            await processObj(json.background);
         }
     }
 
@@ -1902,7 +2328,6 @@ export class BannerService {
             }
 
             this.canvas.requestRenderAll();
-            this.reviveCurvedElements();
 
             setTimeout(() => {
                 this.isHistoryLoading = false;
@@ -3535,167 +3960,7 @@ export class BannerService {
         }
     }
 
-    // --- CURVED TEXT & IMAGE IMPLEMENTATION ---
 
-    reviveCurvedElements(): void {
-        const objs = this.canvas.getObjects() as any[];
-        objs.forEach(obj => {
-            if (obj.type === 'textbox' && obj.curvature) {
-                this.updateTextCurve(obj.curvature, obj);
-            }
-        });
-        this.canvas.renderAll();
-    }
-
-    updateTextCurve(value: number, targetObj?: any): void {
-        const obj = targetObj || this.canvas.getActiveObject() as any;
-        if (!obj || obj.type !== 'textbox') return;
-
-        obj.curvature = value;
-        this.curvedText.set(value);
-
-        if (value === 0) {
-            obj.set('path', null);
-        } else {
-            // Path-based curvature for Fabric 6+
-            const width = obj.width * obj.scaleX;
-            // Map 0-100 to radius. Low value = big radius (flat), High value = small radius (curved)
-            // Range: 200 (very curved) to 5000 (flat)
-            const radius = 5000 / (Math.abs(value) / 10 || 1);
-            const pathData = this.calculateArcPath(width, radius, value > 0);
-
-            const path = new fabric.Path(pathData, {
-                visible: false,
-                stroke: 'transparent',
-                fill: 'transparent'
-            });
-
-            obj.set({
-                path: path,
-                pathSide: 'left',
-                pathAlign: 'center'
-            });
-        }
-
-        this.canvas.renderAll();
-        // saveState() is usually triggered by object:modified, 
-        // but here we manually trigger for slider smoothness if needed, 
-        // though better to do it on change:end.
-    }
-
-    private calculateArcPath(width: number, radius: number, isUpward: boolean): string {
-        const sweep = isUpward ? 0 : 1;
-        const startX = 0;
-        const startY = 0;
-        const endX = width;
-        const endY = 0;
-
-        // M X Y A RX RY X-ROT LARGE-ARC SWEEP ENDX ENDY
-        return `M ${startX} ${startY} A ${radius} ${radius} 0 0 ${sweep} ${endX} ${endY}`;
-    }
-
-    async updateImageCurve(value: number): Promise<void> {
-        const currentObj = this.canvas.getActiveObject() as any;
-        if (!currentObj) return;
-
-        const sourceImg = currentObj._originalImage || (currentObj.type === 'image' ? currentObj : null);
-        if (!sourceImg) return;
-
-        this.curvedImage.set(value);
-
-        if (value === 0 && currentObj.isCurvedGroup) {
-            const origSrc = currentObj.originalImageSrc;
-            if (origSrc) {
-                fabric.Image.fromURL(origSrc).then(orig => {
-                    orig.set({
-                        left: currentObj.left,
-                        top: currentObj.top,
-                        angle: currentObj.angle,
-                        scaleX: currentObj.scaleX || 1,
-                        scaleY: currentObj.scaleY || 1
-                    });
-                    this.canvas.remove(currentObj);
-                    this.canvas.add(orig);
-                    this.canvas.setActiveObject(orig);
-                    this.canvas.renderAll();
-                    this.saveState();
-                });
-            }
-            return;
-        }
-
-        if (value === 0) return;
-
-        // Optimized Slicing
-        const slicesCount = 30; // Reduced for performance
-        const imgWidth = sourceImg.getScaledWidth();
-        const radius = 3000 / (Math.abs(value) / 5 || 1);
-        const totalAngle = imgWidth / radius;
-        const startAngle = -totalAngle / 2;
-
-        const segments: fabric.Object[] = [];
-
-        for (let i = 0; i < slicesCount; i++) {
-            // Synchronous clone for performance
-            const cloned = new fabric.Image(sourceImg.getElement(), {
-                scaleX: sourceImg.scaleX,
-                scaleY: sourceImg.scaleY,
-                originX: 'center',
-                originY: 'center'
-            });
-
-            const clipRect = new fabric.Rect({
-                left: (i * (sourceImg.width / slicesCount)) - (sourceImg.width / 2),
-                top: -sourceImg.height / 2,
-                width: sourceImg.width / slicesCount + 0.8, // Overlap to prevent subpixel gaps
-                height: sourceImg.height,
-                absolutePositioned: false
-            });
-
-            cloned.set({ clipPath: clipRect });
-
-            const theta = startAngle + (i / slicesCount) * totalAngle;
-            const x = Math.sin(theta) * radius;
-            const y = value > 0 ? (Math.cos(theta) * radius - radius) : (-Math.cos(theta) * radius + radius);
-
-            cloned.set({
-                left: x,
-                top: y,
-                angle: theta * (180 / Math.PI)
-            });
-
-            segments.push(cloned);
-        }
-
-        const group = new fabric.Group(segments, {
-            left: currentObj.left,
-            top: currentObj.top,
-            angle: currentObj.angle,
-            originX: 'center',
-            originY: 'center'
-        }) as any;
-
-        // CRITICAL: Preserve persistence links
-        const persistentId = (currentObj as any).idbId;
-        if (persistentId) {
-            group.idbId = persistentId;
-            group.originalImageSrc = `indexeddb://${persistentId}`;
-        } else {
-            group.originalImageSrc = sourceImg.src || sourceImg.toDataURL();
-        }
-
-        group.isCurvedGroup = true;
-        group.imageCurvature = value;
-
-        sourceImg.set('visible', false);
-        this.canvas.remove(currentObj);
-        this.canvas.add(group);
-        this.canvas.setActiveObject(group);
-        this.canvas.requestRenderAll();
-        // Debounce or only save state on slider end in real production, 
-        // but for this task we add it here.
-        this.saveState();
-    }
 
     /**
      * Helper for the user to export their currently saved templates from IndexedDB
@@ -3729,3 +3994,4 @@ export class BannerService {
         this.notificationService.success('Templates exported! Save this file as "public/ready_made_templates.json" to include it in deployment.');
     }
 }
+    

@@ -13,6 +13,10 @@
                 title="Text">
                 <span class="material-symbols-outlined">title</span>
             </button>
+            <button [class.active]="bannerService.activeTab() === 'draw'"
+                (click)="bannerService.activeTab.set('draw'); bannerService.toggleDrawingMode(true)" title="Draw">
+                <span class="material-symbols-outlined">gesture</span>
+            </button>
             <button [class.active]="bannerService.activeTab() === 'elements'"
                 (click)="bannerService.activeTab.set('elements')" title="Elements">
                 <span class="material-symbols-outlined">auto_awesome_motion</span>

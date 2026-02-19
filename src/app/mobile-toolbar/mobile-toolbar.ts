@@ -18,6 +18,10 @@ import { BannerService } from '../services/banner.service';
           <span class="material-symbols-outlined">title</span>
           <label>Text</label>
         </button>
+        <button [class.active]="bannerService.activeTab() === 'draw'" (click)="setTab('draw')">
+          <span class="material-symbols-outlined">gesture</span>
+          <label>Draw</label>
+        </button>
         <button [class.active]="bannerService.activeTab() === 'elements'" (click)="setTab('elements')">
           <span class="material-symbols-outlined">auto_awesome_motion</span>
           <label>Elements</label>
@@ -54,7 +58,8 @@ import { BannerService } from '../services/banner.service';
       background: #ffffff;
       box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
       z-index: 1000;
-      padding-bottom: env(safe-area-inset-bottom);
+      /* Respect iPhone home indicator / safe area */
+      padding-bottom: env(safe-area-inset-bottom, 0px);
       border-top: 1px solid #f1f5f9;
     }
     .mobile-toolbar {
@@ -64,9 +69,9 @@ import { BannerService } from '../services/banner.service';
       overflow-y: hidden;
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
-      padding: 0 16px;
+      padding: 0 12px;
       height: 72px;
-      gap: 12px;
+      gap: 8px;
       
       /* Hide scrollbar */
       scrollbar-width: none;
@@ -74,7 +79,8 @@ import { BannerService } from '../services/banner.service';
       &::-webkit-scrollbar { display: none; }
     }
     button {
-      flex: 0 0 68px;
+      flex: 0 0 auto;
+      width: 64px;
       height: 56px;
       border: 1px solid #f1f5f9;
       background: #ffffff;
@@ -82,17 +88,20 @@ import { BannerService } from '../services/banner.service';
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
+      gap: 3px;
       color: #64748b;
       cursor: pointer;
       border-radius: 12px;
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      min-width: 60px;
+      min-width: 56px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+      /* min touch target size: 44x44 per HIG */
+      min-height: 44px;
+      -webkit-tap-highlight-color: transparent;
 
       &:active {
         background: #f8fafc;
-        transform: scale(0.95);
+        transform: scale(0.94);
         box-shadow: 0 1px 2px rgba(0,0,0,0.01);
       }
     }
@@ -120,6 +129,50 @@ import { BannerService } from '../services/banner.service';
       letter-spacing: 0.5px;
       font-weight: 600;
       pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* Small Phone: < 480px */
+    @media (max-width: 479px) {
+      .mobile-toolbar {
+        height: 68px;
+        padding: 0 8px;
+        gap: 6px;
+      }
+      button {
+        width: 58px;
+        height: 52px;
+        min-width: 50px;
+        border-radius: 10px;
+      }
+      .material-symbols-outlined {
+        font-size: 21px;
+      }
+      label {
+        font-size: 8.5px;
+      }
+    }
+
+    /* Very small phones: < 360px */
+    @media (max-width: 359px) {
+      .mobile-toolbar {
+        height: 64px;
+        padding: 0 6px;
+        gap: 4px;
+      }
+      button {
+        width: 54px;
+        height: 48px;
+        min-width: 46px;
+        border-radius: 9px;
+      }
+      .material-symbols-outlined {
+        font-size: 20px;
+      }
+      label {
+        font-size: 8px;
+        letter-spacing: 0.3px;
+      }
     }
   `]
 })

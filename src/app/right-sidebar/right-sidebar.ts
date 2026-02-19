@@ -37,7 +37,6 @@ export class RightSidebarComponent {
     brightness: number = 0;
     contrast: number = 0;
     saturation: number = 0;
-    textCurve: number = 0;
 
     // Mask State
     maskType: string = 'none';
@@ -155,8 +154,6 @@ export class RightSidebarComponent {
                     else this.currentFilter = 'None';
                 }
 
-                // Sync curvature
-                this.textCurve = (obj as any).curvature || 0;
 
                 // Sync Mask
                 this.maskType = (obj as any).maskType || 'none';
@@ -197,9 +194,6 @@ export class RightSidebarComponent {
     }
 
 
-    onTextCurveChange(value: any) {
-        this.bannerService.updateTextCurve(Number(value));
-    }
 
 
     // Mask Methods
@@ -437,5 +431,34 @@ export class RightSidebarComponent {
                 this.bannerService.updateProperty('shadow', null);
             }
         }
+    }
+
+    // Drawing Methods
+    selectBrush(type: string) {
+        this.bannerService.setBrushType(type);
+        if (!this.bannerService.isDrawingMode()) {
+            this.bannerService.toggleDrawingMode(true);
+        }
+    }
+
+    utilUpdateBrushSize(event: Event) {
+        const size = parseInt((event.target as HTMLInputElement).value);
+        this.bannerService.updateBrushSize(size);
+    }
+
+    utilUpdateBrushOpacity(event: Event) {
+        const opacity = parseFloat((event.target as HTMLInputElement).value);
+        this.bannerService.brushOpacity.set(opacity);
+        this.bannerService.setBrushType(this.bannerService.brushType());
+    }
+
+    utilUpdateBrushColor(event: any) {
+        this.bannerService.updateBrushColor(event.target.value);
+    }
+
+    utilUpdateBrushSmoothing(event: Event) {
+        const smoothing = parseInt((event.target as HTMLInputElement).value);
+        this.bannerService.brushSmoothing.set(smoothing);
+        this.bannerService.setBrushType(this.bannerService.brushType());
     }
 }

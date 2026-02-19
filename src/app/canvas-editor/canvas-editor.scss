@@ -1,8 +1,12 @@
+:host {
+    display: contents;
+}
+
 .editor-workspace {
     width: 100%;
     height: 100%;
     position: relative;
-    background-color: #f3f4f6;
+    background-color: #f1f5f9;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -14,39 +18,93 @@
         justify-content: center;
         overflow: auto;
         padding: 40px;
+        min-height: 0;
+
+        // Hide scrollbar visually but keep functionality
+        scrollbar-width: thin;
+        scrollbar-color: #e2e8f0 transparent;
+
+        &::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        &::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        &::-webkit-scrollbar-thumb {
+            background: #e2e8f0;
+            border-radius: 4px;
+        }
+
+        @media (max-width: 1023px) {
+            padding: 12px;
+            overflow: hidden;
+            align-items: center;
+        }
 
         @media (max-width: 767px) {
-            padding: 10px;
+            padding: 8px;
+        }
+
+        @media (max-width: 479px) {
+            padding: 4px;
         }
     }
 
     .canvas-board {
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        box-shadow:
+            0 4px 6px -1px rgba(0, 0, 0, 0.1),
+            0 2px 4px -1px rgba(0, 0, 0, 0.06),
+            0 0 0 1px rgba(0, 0, 0, 0.04);
         background: white;
+        flex-shrink: 0;
+        border-radius: 2px;
+
+        canvas {
+            display: block;
+            touch-action: none; // Prevent browser gestures on canvas
+        }
     }
 
-    // Floating Bottom Bar
+    // Floating Bottom Zoom Bar
     .bottom-toolbar {
         position: absolute;
-        bottom: 24px;
+        bottom: 20px;
         left: 50% !important;
         transform: translateX(-50%) !important;
         right: auto !important;
         display: flex;
         align-items: center;
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.92);
         backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         padding: 6px;
         border-radius: 16px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow:
+            0 10px 30px rgba(0, 0, 0, 0.1),
+            0 1px 0 rgba(255, 255, 255, 0.8) inset;
+        border: 1px solid rgba(255, 255, 255, 0.6);
         z-index: 100;
         animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        gap: 2px;
+
+        @media (max-width: 1023px) {
+            bottom: 12px;
+            padding: 4px;
+            border-radius: 12px;
+        }
+
+        @media (max-width: 479px) {
+            bottom: 8px;
+            padding: 3px;
+        }
 
         .zoom-controls {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 2px;
 
             .zoom-action-btn {
                 background: white;
@@ -76,15 +134,30 @@
                 .material-symbols-outlined {
                     font-size: 18px;
                 }
+
+                @media (max-width: 479px) {
+                    width: 28px;
+                    height: 28px;
+
+                    .material-symbols-outlined {
+                        font-size: 16px;
+                    }
+                }
             }
 
             .zoom-display {
                 font-size: 12px;
                 font-weight: 700;
                 color: #1e293b;
-                min-width: 50px;
+                min-width: 46px;
                 text-align: center;
                 font-variant-numeric: tabular-nums;
+                user-select: none;
+
+                @media (max-width: 479px) {
+                    font-size: 11px;
+                    min-width: 38px;
+                }
             }
         }
 
@@ -122,6 +195,15 @@
 
             .material-symbols-outlined {
                 font-size: 18px;
+            }
+
+            @media (max-width: 479px) {
+                width: 28px;
+                height: 28px;
+
+                .material-symbols-outlined {
+                    font-size: 16px;
+                }
             }
         }
     }
