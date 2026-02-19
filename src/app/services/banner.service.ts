@@ -3959,39 +3959,4 @@ export class BannerService {
             throw e;
         }
     }
-
-
-
-    /**
-     * Helper for the user to export their currently saved templates from IndexedDB
-     * so they can be committed to the repository and used as Global Templates.
-     */
-    public async exportAllTemplatesToJSON(): Promise<void> {
-        const templates = await this.imageStorage.getTemplates();
-        const exportData = [];
-
-        for (const t of templates) {
-            // Fetch deep payload from shadow storage
-            const designData = await this.persistenceService.getDesign(t.id);
-            exportData.push({
-                ...t,
-                json: designData || t.json // Ensure the full Fabric.js JSON is included
-            });
-        }
-
-        const json = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'ready_made_templates.json';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        this.notificationService.success('Templates exported! Save this file as "public/ready_made_templates.json" to include it in deployment.');
-    }
 }
-    

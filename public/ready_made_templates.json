@@ -1,1 +1,150 @@
-[]
+[
+    {
+        "id": "starter_1",
+        "name": "Summer Promotion",
+        "category": "Design",
+        "thumbnail": "",
+        "isCustom": false,
+        "date": "2026-02-19T10:00:00.000Z",
+        "json": {
+            "version": "5.3.0",
+            "objects": [
+                {
+                    "type": "rect",
+                    "left": 0,
+                    "top": 0,
+                    "width": 1200,
+                    "height": 628,
+                    "fill": {
+                        "type": "linear",
+                        "coords": {
+                            "x1": 0,
+                            "y1": 0,
+                            "x2": 1200,
+                            "y2": 628
+                        },
+                        "colorStops": [
+                            {
+                                "offset": 0,
+                                "color": "#ff9a9e"
+                            },
+                            {
+                                "offset": 1,
+                                "color": "#fad0c4"
+                            }
+                        ]
+                    },
+                    "selectable": false,
+                    "evented": false
+                },
+                {
+                    "type": "i-text",
+                    "left": 600,
+                    "top": 250,
+                    "text": "SUMMER\nSALE",
+                    "fontSize": 120,
+                    "fontWeight": "900",
+                    "fontFamily": "Inter",
+                    "fill": "#ffffff",
+                    "textAlign": "center",
+                    "originX": "center"
+                },
+                {
+                    "type": "i-text",
+                    "left": 600,
+                    "top": 450,
+                    "text": "UP TO 70% OFF",
+                    "fontSize": 40,
+                    "fontWeight": "600",
+                    "fontFamily": "Inter",
+                    "fill": "#ffffff",
+                    "textAlign": "center",
+                    "originX": "center",
+                    "backgroundColor": "rgba(0,0,0,0.2)",
+                    "padding": 10
+                }
+            ]
+        }
+    },
+    {
+        "id": "starter_2",
+        "name": "Professional Card",
+        "category": "Template",
+        "thumbnail": "",
+        "isCustom": false,
+        "date": "2026-02-19T10:05:00.000Z",
+        "json": {
+            "version": "5.3.0",
+            "objects": [
+                {
+                    "type": "rect",
+                    "left": 0,
+                    "top": 0,
+                    "width": 1200,
+                    "height": 628,
+                    "fill": "#1e293b",
+                    "selectable": false
+                },
+                {
+                    "type": "i-text",
+                    "left": 100,
+                    "top": 200,
+                    "text": "John Doe",
+                    "fontSize": 80,
+                    "fontWeight": "bold",
+                    "fontFamily": "Inter",
+                    "fill": "#7c3aed"
+                },
+                {
+                    "type": "i-text",
+                    "left": 100,
+                    "top": 300,
+                    "text": "Creative Director",
+                    "fontSize": 30,
+                    "fontFamily": "Inter",
+                    "fill": "#94a3b8"
+                }
+            ]
+        }
+    },
+    {
+        "id": "starter_3",
+        "name": "Ocean Breeze",
+        "category": "Background",
+        "thumbnail": "",
+        "isCustom": false,
+        "date": "2026-02-19T10:10:00.000Z",
+        "json": {
+            "version": "5.3.0",
+            "objects": [
+                {
+                    "type": "rect",
+                    "left": 0,
+                    "top": 0,
+                    "width": 1200,
+                    "height": 628,
+                    "fill": {
+                        "type": "linear",
+                        "coords": {
+                            "x1": 0,
+                            "y1": 0,
+                            "x2": 0,
+                            "y2": 628
+                        },
+                        "colorStops": [
+                            {
+                                "offset": 0,
+                                "color": "#2af598"
+                            },
+                            {
+                                "offset": 1,
+                                "color": "#009efd"
+                            }
+                        ]
+                    },
+                    "selectable": false
+                }
+            ]
+        }
+    }
+]
