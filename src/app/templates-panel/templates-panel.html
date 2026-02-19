@@ -38,9 +38,10 @@
                         <img *ngIf="t.thumbnail" [src]="t.thumbnail">
                         <div class="no-thumb" *ngIf="!t.thumbnail"><span
                                 class="material-symbols-outlined">wallpaper</span></div>
-                        <button class="card-delete-btn" (click)="deleteTemplate($event, t)">
+                        <button class="card-delete-btn" *ngIf="!t.isSystem" (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
+                        <div class="system-badge" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-name">{{ t.name }}</div>
                 </div>
@@ -67,9 +68,11 @@
                                 <span>Add</span>
                             </button>
                         </div>
-                        <button class="card-delete-btn top-right" (click)="deleteTemplate($event, t)">
+                        <button class="card-delete-btn top-right" *ngIf="!t.isSystem"
+                            (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
+                        <div class="system-badge" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-name-centered">{{ t.name }}</div>
                 </div>
@@ -88,9 +91,10 @@
                         <img *ngIf="t.thumbnail" [src]="t.thumbnail">
                         <div class="no-thumb" *ngIf="!t.thumbnail"><span
                                 class="material-symbols-outlined">dashboard_customize</span></div>
-                        <button class="card-delete-btn" (click)="deleteTemplate($event, t)">
+                        <button class="card-delete-btn" *ngIf="!t.isSystem" (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
+                        <div class="system-badge large" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-info">
                         <span class="name">{{ t.name }}</span>

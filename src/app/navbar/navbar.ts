@@ -211,7 +211,7 @@ export class NavbarComponent {
 
   /**
    * Export all saved templates/designs/backgrounds as a portable JSON file.
-   * That file can be placed in public/ready_made_templates.json and redeployed
+   * That file can be placed in src/assets/templates/system_templates.json and redeployed
    * so every new visitor sees the items automatically.
    */
   async exportLibrary() {

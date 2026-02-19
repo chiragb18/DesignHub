@@ -21,7 +21,8 @@ export interface Template {
     thumbnail: string;
     json: any;
     isCustom: boolean;
-    seeded?: boolean; // Indicates item was seeded from global JSON
+    isSystem?: boolean; // New flag for production-safe templates
+    seeded?: boolean;
     date?: Date;
     tags?: string[];
 }
@@ -1568,64 +1569,46 @@ export class BannerService {
 
     private async initSavedTemplates(): Promise<void> {
         try {
-            console.log('🔄 Library Sync: Starting persistence initialization...');
-            let local = await this.imageStorage.getTemplates();
-            if (!Array.isArray(local)) local = [];
+            console.log('🔄 Library Sync: Initializing production templates...');
 
-            // ── AUTO-SEED FROM DEPLOYED JSON ─────────────────────────────────
-            // Fetch the bundled ready_made_templates.json from the server.
-            // If it has entries that are NOT in IndexedDB yet → import them
-            // (with their embedded base64 images) so they appear for every user.
+            // 1. Load System Templates (via Fetch)
+            let systemTemplates: Template[] = [];
             try {
-                const response = await fetch('/ready_made_templates.json', { cache: 'default' });
+                // Production-safe path as configured in angular.json
+                const response = await fetch('/assets/templates/system_templates.json');
                 if (response.ok) {
-                    const globals: any[] = await response.json();
-                    if (Array.isArray(globals) && globals.length > 0) {
-                        const localIds = new Set(local.map((t: any) => t.id));
-                        const newGlobals = globals.filter(t => t && t.id && !localIds.has(t.id));
-
-                        if (newGlobals.length > 0) {
-                            console.log(`🌐 Seeding ${newGlobals.length} global templates into IndexedDB...`);
-                            // Resolve embedded base64 images → IndexedDB blobs
-                            for (const tpl of newGlobals) {
-                                if (tpl.json) {
-                                    await this.seedImagesFromJson(tpl.json);
-                                }
-                                tpl.isCustom = false;
-                                tpl.seeded = true;
-                            }
-                            // Merge and persist
-                            const merged = [...local, ...newGlobals];
-                            await this.imageStorage.saveTemplates(merged);
-                            local = merged;
-                            console.log(`✅ Seeded ${newGlobals.length} global items into local DB.`);
-                        }
-                    }
+                    systemTemplates = await response.json();
+                    systemTemplates.forEach(t => t.isSystem = true);
                 }
             } catch (err) {
-                console.warn('[Library] Could not fetch global templates:', err);
+                console.warn('[System Library] Failed to load assets:', err);
             }
 
-            let allItems: Template[] = [...local];
+            // 2. Load User Templates (from IndexedDB)
+            let userTemplates: Template[] = await this.imageStorage.getTemplates();
+            if (!Array.isArray(userTemplates)) userTemplates = [];
+            userTemplates.forEach(t => t.isCustom = true);
 
-            // Unified filter and sort
-            allItems = allItems.filter(t => t && t.id);
+            // 3. Merge and Sort
+            // We keep them separate in memory but merge for the signal
+            const allItems: Template[] = [...systemTemplates, ...userTemplates];
+
             allItems.sort((a, b) => {
                 const dateB = b.date ? new Date(b.date).getTime() : 0;
                 const dateA = a.date ? new Date(a.date).getTime() : 0;
                 return dateB - dateA;
             });
 
-            // Distribute to signals with broad filters
+            // 4. Distribute to signals
             this.savedTemplates.set(allItems.filter(t =>
-                !t.category || ['Template', 'Custom', 'Imported'].includes(t.category) || (t as any).seeded
+                !t.category || ['Template', 'Custom', 'Imported'].includes(t.category) || t.isSystem
             ));
             this.savedDesigns.set(allItems.filter(t => t.category === 'Design'));
             this.savedBackgrounds.set(allItems.filter(t => t.category === 'Background'));
 
-            console.log(`✅ Library Sync Complete: Total: ${allItems.length}`);
+            console.log(`✅ Library Sync Complete: ${systemTemplates.length} System | ${userTemplates.length} User`);
         } catch (e) {
-            console.error('❌ Library failure', e);
+            console.error('❌ Template system failure', e);
         }
     }
 
@@ -1667,7 +1650,7 @@ export class BannerService {
     /**
      * Exports ALL templates, designs, and backgrounds from IndexedDB into a
      * self-contained JSON file where every image is embedded as base64.
-     * The user can then commit this file to `public/ready_made_templates.json`
+     * The user can then commit this file to `src/assets/templates/system_templates.json`
      * and redeploy → every new visitor will automatically see these items.
      */
     public async exportLibraryToJSON(): Promise<void> {
@@ -1717,13 +1700,13 @@ export class BannerService {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'ready_made_templates.json';
+            a.download = 'system_templates.json';
             a.click();
             URL.revokeObjectURL(url);
 
             this.notificationService.removeToast(toastId);
             this.notificationService.success(
-                `Exported ${output.length} item(s). Replace public/ready_made_templates.json and redeploy!`
+                `Exported ${output.length} item(s). Move this file to src/assets/templates/system_templates.json and redeploy!`
             );
         } catch (e: any) {
             this.notificationService.removeToast(toastId);

@@ -1,10 +1,11 @@
 [
     {
-        "id": "starter_1",
+        "id": "sys_summer_promo",
         "name": "Summer Promotion",
         "category": "Design",
         "thumbnail": "",
         "isCustom": false,
+        "isSystem": true,
         "date": "2026-02-19T10:00:00.000Z",
         "json": {
             "version": "5.3.0",
@@ -67,11 +68,12 @@
         }
     },
     {
-        "id": "starter_2",
+        "id": "sys_prof_card",
         "name": "Professional Card",
         "category": "Template",
         "thumbnail": "",
         "isCustom": false,
+        "isSystem": true,
         "date": "2026-02-19T10:05:00.000Z",
         "json": {
             "version": "5.3.0",
@@ -108,11 +110,12 @@
         }
     },
     {
-        "id": "starter_3",
+        "id": "sys_ocean_bg",
         "name": "Ocean Breeze",
         "category": "Background",
         "thumbnail": "",
         "isCustom": false,
+        "isSystem": true,
         "date": "2026-02-19T10:10:00.000Z",
         "json": {
             "version": "5.3.0",

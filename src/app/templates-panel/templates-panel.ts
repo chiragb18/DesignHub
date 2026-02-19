@@ -136,9 +136,8 @@ export class TemplatesPanel {
             'Replace current design with this? Unsaved changes will be lost.',
             () => {
                 this.bannerService.activeTemplateId.set(template.isCustom ? template.id : null);
-                // Pass the entire template object, not template.json (which is null in shadow storage)
                 this.bannerService.loadTemplate(template);
-                this.notificationService.info('Template loaded');
+                this.notificationService.info(`${template.isSystem ? 'System' : 'User'} template loaded`);
             }
         );
     }
@@ -151,6 +150,10 @@ export class TemplatesPanel {
 
     async deleteTemplate(event: Event, template: Template) {
         event.stopPropagation();
+        if (template.isSystem) {
+            this.notificationService.warning('System templates cannot be deleted.');
+            return;
+        }
         this.notificationService.confirm(
             'Delete Item',
             `Are you sure you want to delete "${template.name}"? This action cannot be undone.`,
