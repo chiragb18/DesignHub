@@ -24,6 +24,17 @@
         <div class="search-bar">
             <span class="material-symbols-outlined">search</span>
             <input type="text" placeholder="Search saved items..." [(ngModel)]="searchQuery">
+            <button class="refresh-btn" (click)="refresh()" title="Sync Library">
+                <span class="material-symbols-outlined"
+                    [class.spinning]="bannerService.isProjectLoading()">refresh</span>
+            </button>
+        </div>
+
+        <!-- EMPTY STATE -->
+        <div class="empty-state-library" *ngIf="!hasAnyData() && !bannerService.isProjectLoading()">
+            <span class="material-symbols-outlined">auto_awesome_motion</span>
+            <h3>Your Library is Empty</h3>
+            <p>Save a design, template, or background to see it here. They'll be synced to your cloud automatically.</p>
         </div>
 
         <!-- BACKGROUNDS SECTION -->
@@ -121,14 +132,6 @@
             </div>
         </section>
 
-        <!-- DEPLOYMENT UTILITY (Developer Only) -->
-        <section class="content-section dev-utils">
-            <button class="export-deploy-btn" (click)="bannerService.exportLibraryToJSON()"
-                title="Download all local templates as JSON for deployment">
-                <span class="material-symbols-outlined">publish</span>
-                <span>Prepare for Deployment</span>
-            </button>
-            <p class="export-hint">Export all local items to commit them to the repository for everyone to see.</p>
-        </section>
+
     </div>
 </div>

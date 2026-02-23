@@ -27,19 +27,6 @@
                 </button>
             </div>
 
-            <!-- ── Live Preview ─────────────────────────────────────────── -->
-            <div class="live-preview-row">
-                <div class="preview-label">Preview</div>
-                <div class="preview-canvas">
-                    <div class="preview-dot"
-                        [style.width.px]="bannerService.isErasing() ? bannerService.eraserSize() : bannerService.brushSize()"
-                        [style.height.px]="bannerService.isErasing() ? bannerService.eraserSize() : bannerService.brushSize()"
-                        [style.background]="bannerService.isErasing() ? 'transparent' : bannerService.brushColor()"
-                        [style.border]="bannerService.isErasing() ? '2px dashed #ef4444' : 'none'"
-                        [style.opacity]="bannerService.isErasing() ? 1 : bannerService.brushOpacity()">
-                    </div>
-                </div>
-            </div>
 
             <!-- ── Brush Types (hidden when erasing) ────────── -->
             <ng-container *ngIf="!bannerService.isErasing()">
@@ -77,6 +64,18 @@
                 <ng-container *ngIf="bannerService.isDrawingMode() && !bannerService.isErasing()">
                     <div class="property-card">
                         <div class="section-title">Brush Properties</div>
+
+                        <!-- ── Live Preview (Integrated) ────────────────────────── -->
+                        <div class="live-preview-row integrated">
+                            <div class="preview-label">Sample</div>
+                            <div class="preview-canvas">
+                                <div class="preview-dot" [style.width.px]="bannerService.brushSize()"
+                                    [style.height.px]="bannerService.brushSize()"
+                                    [style.background]="bannerService.brushColor()"
+                                    [style.opacity]="bannerService.brushOpacity()">
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="control-group">
                             <div class="label-row">
@@ -123,6 +122,17 @@
             <ng-container *ngIf="bannerService.isErasing()">
                 <div class="property-card">
                     <div class="section-title">Eraser Properties</div>
+
+                    <!-- ── Live Preview (Integrated) ────────────────────────── -->
+                    <div class="live-preview-row integrated">
+                        <div class="preview-label">Sample</div>
+                        <div class="preview-canvas">
+                            <div class="preview-dot" [style.width.px]="bannerService.eraserSize()"
+                                [style.height.px]="bannerService.eraserSize()" [style.background]="'transparent'"
+                                [style.border]="'2px dashed #ef4444'" [style.opacity]="1">
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="control-group">
                         <div class="label-row">
@@ -196,8 +206,30 @@
                         (click)="bannerService.typingLanguage.set('mr')">
                         Marathi
                     </button>
-                    <div class="hint" *ngIf="bannerService.typingLanguage() === 'mr'">
-                        Phonetic: type "namaskar" for "नमस्कार"
+
+                    <div class="google-smart-tools" *ngIf="bannerService.typingLanguage() === 'mr'">
+                        <div class="precision-control">
+                            <label class="switch-row">
+                                <span class="label">Precision Mode</span>
+                                <input type="checkbox" [checked]="bannerService.precisionMode()"
+                                    (change)="bannerService.precisionMode.set(!bannerService.precisionMode())">
+                            </label>
+                            <p class="desc">OFF to fix spellings manually</p>
+                        </div>
+
+                        <div class="smart-actions-stack">
+                            <button class="btn-smart phonetic" (click)="bannerService.transliterateBulkSelectedText()"
+                                title="Converts phonetic words (e.g. Namaskar -> नमस्कार)">
+                                <span class="material-symbols-outlined">spellcheck</span>
+                                Translate(Phonetic:ENG -> मराठी)
+                            </button>
+
+                            <button class="btn-smart meaning" (click)="bannerService.translateSelectedText()"
+                                title="Converts meaning (e.g. Happy Birthday -> वाढदिवसाच्या शुभेच्छा)">
+                                <span class="material-symbols-outlined">translate</span>
+                                Translate(Meaning: मराठी अर्थ)
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -415,7 +447,8 @@
                 <div class="section-title">AI Tools</div>
 
                 <!-- Progress Loading State -->
-                <div class="ai-progress-status" *ngIf="bannerService.isRemovingBg()">
+                <div class="ai-progress-status"
+                    *ngIf="bannerService.isRemovingBg() && bannerService.processingObjectId() === (currentObject?.id || '')">
                     <div class="progress-info">
                         <span>{{ bannerService.bgRemovalStatus() }}</span>
                     </div>
@@ -426,9 +459,17 @@
 
                 <div class="ai-tool-group" *ngIf="!bannerService.isPenCutting()">
                     <button class="btn-ai-action" (click)="bannerService.removeBackground()"
-                        *ngIf="!bannerService.isRemovingBg() && !currentObject?.isBgRemoved">
-                        <span class="material-symbols-outlined">auto_fix_high</span>
-                        Remove Background
+                        [disabled]="bannerService.isRemovingBg() && bannerService.processingObjectId() === (currentObject?.id || '')"
+                        *ngIf="!currentObject?.isBgRemoved">
+                        <ng-container
+                            *ngIf="bannerService.isRemovingBg() && bannerService.processingObjectId() === (currentObject?.id || ''); else normalBtn">
+                            <span class="material-symbols-outlined spinning">sync</span>
+                            Processing...
+                        </ng-container>
+                        <ng-template #normalBtn>
+                            <span class="material-symbols-outlined">auto_fix_high</span>
+                            Remove Background
+                        </ng-template>
                     </button>
 
                     <button class="btn-ai-action pen-cut" (click)="bannerService.startPenCut()"
@@ -438,9 +479,9 @@
                     </button>
 
                     <button class="btn-ai-action restore" (click)="bannerService.restoreOriginalImage()"
-                        *ngIf="!bannerService.isRemovingBg() && currentObject?.isBgRemoved">
+                        *ngIf="currentObject?.isBgRemoved">
                         <span class="material-symbols-outlined">history</span>
-                        Restore Original
+                        Restore Original Image
                     </button>
                 </div>
 
@@ -498,53 +539,43 @@
 
             <div *ngIf="currentObject?.type === 'image' && !bannerService.isPenCutting(); else noImageFilter">
                 <div class="property-card">
-                    <div class="section-title">Filter Presets</div>
-                    <div class="filters-grid">
-                        <div class="filter-card" (click)="applyFilter('None')"
-                            [class.active]="currentFilter === 'None'">
-                            <div class="preview none"></div>
-                            <span>None</span>
-                        </div>
-                        <div class="filter-card" (click)="applyFilter('Grayscale')"
-                            [class.active]="currentFilter === 'Grayscale'">
-                            <div class="preview grayscale"></div>
-                            <span>Grayscale</span>
-                        </div>
-                        <div class="filter-card" (click)="applyFilter('Sepia')"
-                            [class.active]="currentFilter === 'Sepia'">
-                            <div class="preview sepia"></div>
-                            <span>Sepia</span>
-                        </div>
-                        <div class="filter-card" (click)="applyFilter('Invert')"
-                            [class.active]="currentFilter === 'Invert'">
-                            <div class="preview invert"></div>
-                            <span>Invert</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="property-card">
                     <div class="section-title">Manual Adjustments</div>
                     <div class="adjustment-sliders">
                         <div class="slider-group">
-                            <div class="label-row"><label>Brightness</label><span>{{ brightness }}</span></div>
+                            <div class="label-row">
+                                <label>Brightness</label>
+                                <span>{{ brightness }}%</span>
+                            </div>
                             <input type="range" min="-100" max="100" [ngModel]="brightness"
                                 (input)="updateBrightness($any($event.target).value)">
                         </div>
+
                         <div class="slider-group">
-                            <div class="label-row"><label>Contrast</label><span>{{ contrast }}</span></div>
+                            <div class="label-row">
+                                <label>Contrast</label>
+                                <span>{{ contrast }}%</span>
+                            </div>
                             <input type="range" min="-100" max="100" [ngModel]="contrast"
                                 (input)="updateContrast($any($event.target).value)">
                         </div>
+
                         <div class="slider-group">
-                            <div class="label-row"><label>Saturation</label><span>{{ saturation }}</span></div>
+                            <div class="label-row">
+                                <label>Saturation</label>
+                                <span>{{ saturation }}%</span>
+                            </div>
                             <input type="range" min="-100" max="100" [ngModel]="saturation"
                                 (input)="updateSaturation($any($event.target).value)">
                         </div>
+
+
                         <div class="slider-group">
-                            <div class="label-row"><label>Blur</label><span>{{ blurAmount }}px</span></div>
-                            <input type="range" min="0" max="20" [(ngModel)]="blurAmount"
-                                (input)="applyBlur(blurAmount)">
+                            <div class="label-row">
+                                <label>Blur Intensity</label>
+                                <span>{{ blurAmount }}px</span>
+                            </div>
+                            <input type="range" min="0" max="50" [ngModel]="blurAmount"
+                                (input)="applyBlur($any($event.target).value)">
                         </div>
                     </div>
                 </div>

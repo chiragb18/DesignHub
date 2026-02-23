@@ -1,83 +1,89 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { lastValueFrom } from 'rxjs';
 import * as _Sanscript from '@indic-transliteration/sanscript';
 
-// Handle both standard ESM and CommonJS/UMD import styles
 const Sanscript = (_Sanscript as any).default || _Sanscript;
 
 @Injectable({
     providedIn: 'root',
 })
 export class TransliterationService {
-    /**
-     * Transliterates phonetic English to Marathi (Devanagari)
-     * It handles emojis and existing Marathi text by splitting.
-     */
-    public transliterate(text: string): string {
-        if (!text) return '';
+    private http = inject(HttpClient);
 
-        // Strategy: Replace only Latin word blocks with optional markers to preserve emojis, digits and formatting.
-        // We use a regex that captures Latin words that might be mixed with already transliterated Marathi.
-        return text.replace(/([\u0900-\u097FA-Za-z0-9'_\^]*[A-Za-z][\u0900-\u097FA-Za-z0-9'_\^]*)/g, (match) => {
-            try {
-                if (!Sanscript || typeof Sanscript.t !== 'function') {
-                    console.warn('[TransliterationService] Sanscript.t not available');
-                    return match;
-                }
-                // If it contains Marathi characters, convert to ITRANS first
-                const isMixed = /[\u0900-\u097F]/.test(match);
-                const itransWord = isMixed ? this.toItrans(match) : match;
-                const result = this.phoneticMarathi(itransWord);
-                return result || match;
-            } catch (e) {
-                console.error('[TransliterationService] Error in transliterate:', e);
-                return match;
+    /**
+     * Google Input Tools API for Marathi (extremely accurate)
+     */
+    public async getGoogleTransliteration(text: string): Promise<string> {
+        if (!text.trim()) return text;
+        try {
+            // itc=mr-t-i0-und is the code for Marathi Transliteration
+            const url = `https://inputtools.google.com/request?text=${encodeURIComponent(text)}&itc=mr-t-i0-und&num=1&cp=0&cs=1&ie=utf-8&oe=utf-8&app=test`;
+            const response: any = await lastValueFrom(this.http.get(url));
+            if (response && response[0] === 'SUCCESS' && response[1] && Array.isArray(response[1])) {
+                // Google returns an array of segments. Join all first-choice transliterations.
+                return response[1].map((segment: any) => {
+                    try {
+                        return (segment && segment[1] && segment[1][0]) ? segment[1][0] : (segment[0] || '');
+                    } catch (e) {
+                        return segment[0] || '';
+                    }
+                }).join('');
             }
-        });
+        } catch (e) {
+            console.error('[TransliterationService] Google API Error:', e);
+        }
+        return this.transliterateLocal(text);
     }
 
     /**
-     * Converts Devanagari back to ITRANS (English phonetic)
-     * Useful for "re-reading" partially typed words.
+     * Fallback local transliteration using Sanscript
      */
+    public transliterateLocal(text: string, isEnd: boolean = false): string {
+        if (!text) return '';
+        if (!Sanscript || typeof Sanscript.t !== 'function') return text;
+
+        let processed = text
+            .replace(/chh/g, 'CHH_TMP').replace(/ch/g, 'c').replace(/CHH_TMP/g, 'ch')
+            .replace(/ksh/g, 'kS').replace(/Ksh/g, 'kS')
+            .replace(/shh/g, 'Sh')
+            .replace(/jn/g, 'j~n').replace(/dn/g, 'j~n').replace(/gy/g, 'j~n')
+            .replace(/aa/g, 'A').replace(/AA/g, 'A')
+            .replace(/ee/g, 'I').replace(/EE/g, 'I')
+            .replace(/oo/g, 'U').replace(/OO/g, 'U')
+            .replace(/w/g, 'v').replace(/W/g, 'v')
+            .replace(/z/g, 'j').replace(/Z/g, 'j')
+            .replace(/([kgcjtdpb])h/g, '$1H'); // Handle aspiration more strictly
+
+        let result = Sanscript.t(processed, 'itrans', 'devanagari');
+
+        if (isEnd && result.length > 1 && result.endsWith('्') && !text.endsWith('_')) {
+            result = result.substring(0, result.length - 1);
+        }
+        return result;
+    }
+
     public toItrans(text: string): string {
-        if (!text || !Sanscript || typeof Sanscript.t !== 'function') return text || '';
+        if (!text || !Sanscript) return text || '';
         return Sanscript.t(text, 'devanagari', 'itrans');
     }
 
     /**
-     * A more advanced transliterator that handles vowels at the end of words
-     * more naturally for Marathi phonetic typing.
+     * Translation (Meaning-based) with improved accuracy parameters
      */
-    public phoneticMarathi(input: string): string {
-        if (!input) return '';
-        if (!Sanscript || typeof Sanscript.t !== 'function') {
-            console.error('[TransliterationService] Sanscript library not loaded correctly');
-            return input;
+    public async translateToMarathi(text: string): Promise<string> {
+        if (!text.trim()) return text;
+        try {
+            // Using more parameters for better accuracy (sl=auto for automatic language detection)
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=mr&dt=t&dt=at&dt=bd&dt=rm&q=${encodeURIComponent(text)}`;
+            const response: any = await lastValueFrom(this.http.get(url));
+            if (response && response[0]) {
+                const translatedText = response[0].map((s: any) => s[0]).join('');
+                return translatedText || text;
+            }
+        } catch (e) {
+            console.error('[TransliterationService] Translation error:', e);
         }
-
-        // Allow case-sensitive input for precise mapping
-        // Pre-process common phonetic patterns for natural Marathi feel
-        let processed = input
-            .replace(/aa/g, 'A')
-            .replace(/ee/g, 'I')
-            .replace(/oo/g, 'U')
-            .replace(/shh/g, 'Sh')
-            .replace(/chh/g, 'Ch')
-            .replace(/w/g, 'v')
-            .replace(/W/g, 'v')
-            .replace(/Z/g, 'J')
-            .replace(/z/g, 'j');
-
-        // Use Sanscript for ITRANS to Devanagari conversion
-        let result = Sanscript.t(processed, 'itrans', 'devanagari');
-
-        // Natural Marathi stop: Only remove trailing halant ('्') if:
-        // 1. It's not a single consonant (avoid 'b' -> '')
-        // 2. The user didn't explicitly use halant markers like '_' or '^'
-        if (result.length > 1 && result.endsWith('्') && !input.endsWith('_') && !input.endsWith('^')) {
-            result = result.substring(0, result.length - 1);
-        }
-
-        return result;
+        return text;
     }
 }

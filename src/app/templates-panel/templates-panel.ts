@@ -40,7 +40,7 @@ export class TemplatesPanel {
 
     patterns = ['dots', 'dots-large', 'stripes', 'grid', 'checkerboard', 'diagonal', 'waves'];
 
-    mockTemplates: Template[] = [];
+
 
     // Background Actions
     setSolidBg(color: string) {
@@ -162,5 +162,15 @@ export class TemplatesPanel {
                 this.notificationService.success('Item deleted');
             }
         );
+    }
+    hasAnyData = computed(() => {
+        return this.filteredTemplates().length > 0 ||
+            this.filteredDesigns().length > 0 ||
+            this.filteredBackgrounds().length > 0;
+    });
+
+    async refresh() {
+        await this.bannerService.refreshLibrary();
+        this.notificationService.info('Library updated');
     }
 }

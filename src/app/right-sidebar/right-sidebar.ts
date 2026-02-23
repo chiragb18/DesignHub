@@ -30,7 +30,6 @@ export class RightSidebarComponent {
     textAlign: string = 'left';
     charSpacing: number = 0;
     lineHeight: number = 1.2;
-    currentFilter: string = 'None';
     angle: number = 0;
 
     // Advanced adjustments
@@ -81,6 +80,7 @@ export class RightSidebarComponent {
         { name: 'Bangers (Bangers)', value: 'Bangers' },
         { name: 'Permanent Marker (Permanent Marker)', value: 'Permanent Marker' },
         { name: 'Fredoka One (Fredoka One)', value: 'Fredoka One' },
+        { name: 'Noto Sans Devanagari', value: 'Noto Sans Devanagari' },
         { name: 'Shrikhand (Shrikhand)', value: 'Shrikhand' }
     ];
 
@@ -109,11 +109,11 @@ export class RightSidebarComponent {
         },
         {
             name: 'Food & Drink',
-            emojis: ['🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌶', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🍠', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', '🧈', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🌭', '🍔', '🍟', '🍕', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘', '🫕', '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪', '🍤', '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧', '🍨', '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫', '🍿', '🍩', '🍪', '🌰', '🥜', '🍯', '🥛', '🍼', '🫖', '☕️', '🍵', '🧃', '🥤', '🧋', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸', '🍹', '🧉', '🍾', '🧊', '🥄', '🍴', '🍽', '🥣', '🥡', '🥢', '🧂']
+            emojis: ['🍏', '🍎', '🍐', '🍊', '🍋', '🍌', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', '🥝', '🍅', '🍆', '🥑', '🥦', '🥬', '🥒', '🌶', '🫑', '🌽', '🥕', '🫒', '🧄', '🧅', '🥔', '🍠', '🥐', '🥯', '🍞', '🥖', '🥨', '🧀', '🥚', '🍳', 'バター', '🥞', '🧇', '🥓', '🥩', '🍗', '🍖', '🌭', '🍔', '🍟', '🍕', '🥪', '🥙', '🧆', '🌮', '🌯', '🫔', '🥗', '🥘', '🫕', '🥫', '🍝', '🍜', '🍲', '🍛', '🍣', '🍱', '🥟', '🦪', '🍤', '🍙', '🍚', '🍘', '🍥', '🥠', '🥮', '🍢', '🍡', '🍧', '🍨', '🍦', '🥧', '🧁', '🍰', '🎂', '🍮', '🍭', '🍬', '🍫', '🍿', '🍩', '🍪', '🌰', '🥜', '🍯', '🥛', '🍼', '🫖', '☕️', '🍵', '🧃', '🥤', '🧋', '🍶', '🍺', '🍻', '🥂', '🍷', '🥃', '🍸', '🍹', '🧉', '🍾', '🧊', '🥄', '🍴', '🍽', '🥣', '🥡', '🥢', '🧂']
         },
         {
             name: 'Objects & Symbols',
-            emojis: ['⌚️', '📱', '💻', '⌨️', '🖥', '🖨', '🖱', '🕹', '💾', '💿', '📀', '📷', '📸', '📹', '🎥', '📽', '🎞', '📞', '☎️', '📺', '📻', '🎙', '⏱', '⏲', '⏰', '🕰', '⌛️', '⏳', '🔋', '🔌', '💡', '🔦', '🕯', '🧯', '💸', '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜', '🧰', '🪛', '🔧', '🔨', '⚒', '🛠', '⛏', '🪚', '🔩', '⚙️', '🪤', '🧱', '⛓', '🧲', '🔫', '💣', '🧨', '🪓', '🔪', '🗡', '⚔️', '🛡', '🚬', '⚰️', '🪦', '⚱️', '🏺', '🔮', '📿', '🧿', '💈', '⚗️', '🔭', '🔬', '🩹', '🩺', '💊', '💉', '🩸', '🧬', '🦠', '🧪', '🌡', '🧹', '🪠', '🧺', '🧻', '🚽', '🚿', '🛁', '🛀', '🧼', '🪥', '🪒', '🧽', '🪣', '🛎', '🔑', '🗝', '🚪', '🪑', '🛋', '🛏', '🛌', '🧸', '🖼', '🪞', '🛍', '🛒', '🎁', '🎈', '🎏', '🎀', '🪄', '🎊', '🎉', '🎎', '🏮', '🎐', '🧧', '✉️', '📩', '📨', '📧', '💌', '📥', '📤', '📦', '🏷', '📪', '📫', '📬', '📭', '📮', '📯', '📜', '📃', '📄', '📑', '🧾', '📊', '📈', '📉', '🗒', '🗓', '📆', '📅', '🗑', '📇', '🗃', '🗳', '🗄', '📋', '📁', '📂', '🗂', '🗞', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚', '📖', '🔖', '🧷', '🔗', '📎', '🖇', '📐', '📏', '🧮', '📌', '📍', '✂️', '🖊', '🖋', '✒️', '🖌', '🖍', '📝', '✏️', '🔍', '🔎', '🔏', '🔐', '🔒', '🔓', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔']
+            emojis: ['⌚️', '📱', '💻', '⌨️', '🖥', '🖨', 'マウス', '🕹', '💾', '💿', '📀', '📷', '📸', '📹', '🎥', '📽', '🎞', '📞', '☎️', 'テレビ', 'ラジオ', '🎙', '⏱', '⏲', 'アラーム', '🕰', '⌛️', '⏳', '電池', 'プラグ', '💡', '🔦', 'キャンドル', '🧯', '💸', '💵', '💴', '💶', '💷', 'コイン', '袋', 'カード', '💎', '⚖️', '梯子', '工具', 'ドライバー', 'レンチ', '金槌', '⚒', '🛠', 'つるはし', '鋸', 'ボルト', 'ギア', '罠', '煉瓦', '鎖', '磁石', '銃', '爆弾', '花火', '斧', 'ナイフ', '短剣', '剣', '盾', '煙草', '棺', '🪦', '骨壷', '🏺', '水晶', '数珠', 'お守り', 'ポール', 'フラスコ', '望遠鏡', '顕微鏡', '包帯', '聴診器', '薬', '注射器', '血液', 'DNA', 'ウイルス', '試験管', '温度計', '箒', '🪠', '籠', 'トイレットペーパー', '便器', 'シャワー', '浴槽', '入浴', '石鹸', '歯ブラシ', 'カミソリ', 'スポンジ', 'バケツ', '呼び鈴', '鍵', '古鍵', '扉', '椅子', 'ソファ', 'ベッド', '睡眠', 'ぬいぐるみ', '額縁', '鏡', '買い物袋', 'カート', '贈り物', '風船', '鯉のぼり', 'リボン', '杖', '紙吹雪', 'クラッカー', '雛人形', '提灯', '風鈴', 'ポチ袋', '封筒', '📩', '📨', '📧', '💌', '📥', '📤', '小包', 'タグ', 'ポスト', '📮', '📯', '巻物', '📃', '📄', '📑', 'レシート', '統計', '上昇', '下降', 'メモ', 'カレンダー', '🗑', 'カード入れ', '箱', 'ファイル', '書類入れ', 'クリップボード', '📁', '📂', '名刺入れ', '新聞', '📓', '📔', '帳面', '📕', '📗', '📘', '📙', '本棚', '開いた本', '栞', '安全ピン', 'リンク', 'クリップ', '🖇', '三角定規', '直定規', '算盤', '押しピン', '画鋲', 'ハサミ', 'ペン', '万年筆', '筆', 'ブラシ', 'クレヨン', 'メモ帳', '鉛筆', '虫眼鏡', '🔍', '鍵付きペン', '秘密', '錠', '開いた錠', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔']
         }
     ];
 
@@ -127,9 +127,9 @@ export class RightSidebarComponent {
                 // Sync blur amount
                 if (obj.type === 'image') {
                     const blurFilter = obj.filters?.find((f: any) => f.type === 'Blur');
-                    this.blurAmount = blurFilter ? (blurFilter.blur * 10) : 0;
+                    this.blurAmount = blurFilter ? Math.round(blurFilter.blur * 10) : 0;
                 } else {
-                    this.blurAmount = obj.shadow ? (obj.shadow.blur / 2) : 0;
+                    this.blurAmount = obj.shadow ? Math.round(obj.shadow.blur / 2) : 0;
                 }
 
                 if (obj.type === 'textbox' || obj.type === 'i-text') {
@@ -147,13 +147,18 @@ export class RightSidebarComponent {
 
                 if (obj.type === 'image') {
                     const img = obj as fabric.Image;
-                    const f = img.filters?.[0] as any;
-                    if (f?.type === 'Grayscale') this.currentFilter = 'Grayscale';
-                    else if (f?.type === 'Invert') this.currentFilter = 'Invert';
-                    else if (f?.type === 'Sepia') this.currentFilter = 'Sepia';
-                    else this.currentFilter = 'None';
-                }
+                    const filters = img.filters || [];
 
+                    // Manual Adjustments Sync (-1..1 to -100..100)
+                    const b = filters.find((f: any) => f.type === 'Brightness') as any;
+                    this.brightness = b ? Math.round(b.brightness * 100) : 0;
+
+                    const c = filters.find((f: any) => f.type === 'Contrast') as any;
+                    this.contrast = c ? Math.round(c.contrast * 100) : 0;
+
+                    const s = filters.find((f: any) => f.type === 'Saturation') as any;
+                    this.saturation = s ? Math.round(s.saturation * 100) : 0;
+                }
 
                 // Sync Mask
                 this.maskType = (obj as any).maskType || 'none';
@@ -165,7 +170,6 @@ export class RightSidebarComponent {
         // Effect to update layer previews
         effect(() => {
             const objs = this.canvasObjects();
-            // We want to generate previews for objects that don't have them
             objs.forEach(obj => {
                 if (obj.type === 'image') {
                     const img = obj as any;
@@ -174,16 +178,13 @@ export class RightSidebarComponent {
                         img._layerPreview = src;
                     }
                 } else if (!(obj as any)._layerPreview || (obj as any).dirty) {
-                    // Generate a small preview for other types
                     try {
                         (obj as any)._layerPreview = obj.toDataURL({
                             format: 'png',
-                            multiplier: 120 / (obj.width || 100), // Size it to roughly 120px wide
+                            multiplier: 120 / (obj.width || 100),
                             quality: 0.2
                         });
-                    } catch (e) {
-                        // Support for objects that can't easily toDataURL
-                    }
+                    } catch (e) { }
                 }
             });
         });
@@ -192,9 +193,6 @@ export class RightSidebarComponent {
     get currentObject(): any {
         return this.selectedObject() || this.bannerService.penCutTarget;
     }
-
-
-
 
     // Mask Methods
     applyMask(type: string) {
@@ -274,15 +272,11 @@ export class RightSidebarComponent {
         this.bannerService.moveLayer(obj, direction);
     }
 
-    // NEW METHODS FOR DRAG & DROP
     drop(event: CdkDragDrop<string[]>) {
         if (event.previousIndex === event.currentIndex) return;
-
-        // Convert UI index (0=Top) to Fabric index (0=Bottom)
         const count = this.canvasObjects().length;
         const fromFabric = count - 1 - event.previousIndex;
         const toFabric = count - 1 - event.currentIndex;
-
         this.bannerService.reorderLayers(fromFabric, toFabric);
     }
 
@@ -323,11 +317,6 @@ export class RightSidebarComponent {
         this.bannerService.flip(dir);
     }
 
-    applyFilter(type: string) {
-        this.currentFilter = type;
-        this.bannerService.applyFilter(type as any);
-    }
-
     applyEffect(type: 'outline' | 'gradient' | 'shadow') {
         this.bannerService.applyTextEffect(type);
     }
@@ -345,17 +334,6 @@ export class RightSidebarComponent {
         this.bannerService.setPatternBg(color);
     }
 
-    onGravityFileSelected(event: any) {
-        const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e: any) => {
-                this.bannerService.setAntiGravityBg(e.target.result);
-            };
-            reader.readAsDataURL(file);
-        }
-    }
-
     updateBrightness(val: any) {
         this.brightness = +val;
         this.bannerService.setBrightness(this.brightness / 100);
@@ -371,13 +349,24 @@ export class RightSidebarComponent {
         this.bannerService.setSaturation(this.saturation / 100);
     }
 
+    onGravityFileSelected(event: any) {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e: any) => {
+                this.bannerService.setAntiGravityBg(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
     addText(type: 'heading' | 'subheading' | 'body') {
         const styles = {
             heading: { fontSize: 48, fontWeight: 'bold' },
             subheading: { fontSize: 32, fontWeight: 'medium' },
             body: { fontSize: 18, fontWeight: 'normal' }
         };
-        const s = styles[type];
+        const s = (styles as any)[type];
         this.bannerService.addText(type.charAt(0).toUpperCase() + type.slice(1), s);
     }
 
@@ -401,36 +390,7 @@ export class RightSidebarComponent {
     }
 
     applyBlur(value: number) {
-        const obj = this.selectedObject() as any;
-        if (!obj) return;
-
-        if (obj.type === 'image') {
-            // Image Blur (via Filter)
-            if (!obj.filters) obj.filters = [];
-            obj.filters = obj.filters.filter((f: any) => f.type !== 'Blur');
-
-            if (value > 0) {
-                const blurFilter = new fabric.filters.Blur({ blur: value / 10 });
-                obj.filters.push(blurFilter);
-            }
-            if (obj.applyFilters) obj.applyFilters();
-            this.bannerService.updateProperty('filters', obj.filters);
-
-        } else {
-            // Vector Blur (via Shadow)
-            if (value > 0) {
-                const shadowColor = obj.fill && obj.fill !== 'transparent' ? obj.fill : '#000000';
-                const shadow = new fabric.Shadow({
-                    color: shadowColor,
-                    blur: value * 2,
-                    offsetX: 0,
-                    offsetY: 0
-                });
-                this.bannerService.updateProperty('shadow', shadow);
-            } else {
-                this.bannerService.updateProperty('shadow', null);
-            }
-        }
+        this.bannerService.setBlur(value);
     }
 
     // Drawing Methods

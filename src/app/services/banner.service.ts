@@ -3,6 +3,7 @@ import * as fabric from 'fabric';
 import { TransliterationService } from './transliteration.service';
 import { ImageStorageService } from './image-storage.service';
 import { PersistenceService } from './persistence.service';
+import { BannerCloudService } from './banner-cloud.service';
 import type { Config } from '@imgly/background-removal';
 import { NotificationService } from './notification.service';
 
@@ -79,9 +80,12 @@ export class BannerService {
     public showTemplateInfo = signal(false);
     public isRemovingBg = signal(false);
     public cutouts = signal<Cutout[]>([]);
-    public bgRemovalProgress = signal(0);
+    public bgRemovalProgress = signal<number>(0);
     public bgRemovalStatus = signal<string>('Preparing...');
+    public processingObjectId = signal<string | null>(null); // Track which object is processing
     public typingLanguage = signal<'en' | 'mr'>('en');
+    public precisionMode = signal<boolean>(true); // When true, auto-transliterates. When false, allows precise manual editing.
+    private lastTextLengthMap = new Map<fabric.Object, number>();
     public isSaving = signal(false);
     public isProjectLoading = signal(false);
     public activeProjectId = signal<string | null>(null);
@@ -114,7 +118,9 @@ export class BannerService {
     private imageStorage = inject(ImageStorageService);
     private translitService = inject(TransliterationService);
     private persistenceService = inject(PersistenceService);
+    private bannerCloudService = inject(BannerCloudService);
     private notificationService = inject(NotificationService);
+
 
     public brushTypes = [
         { id: 'pen', name: 'Pencil', icon: 'edit', path: 'M20,50 C30,30 70,70 80,50' },
@@ -137,6 +143,14 @@ export class BannerService {
         this.debouncedSave = this.debounce(this.saveState.bind(this), 300);
         this.debouncedResize = this.debounce(this.handleResize.bind(this), 100);
         this.debouncedRefresh = this.debounce(this.refreshState.bind(this), 50);
+
+        // Auto-initialize if canvas is already present or on next tick
+        setTimeout(() => {
+            if (!this.savedTemplates().length) {
+                this.initSavedTemplates();
+                this.initSavedProjects();
+            }
+        }, 1000);
     }
 
     // ... (InitCanvas and other methods remain) ...
@@ -157,135 +171,153 @@ export class BannerService {
 
     // ... (Skip to applying filters) ...
 
-    applyFilter(filterType: 'Grayscale' | 'Invert' | 'Sepia' | 'None'): void {
+    private manualFilterTimeouts = new Map<string, any>();
+
+    /**
+     * Debounced version of manual filter application.
+     * Captures the object reference to ensure stability during fast slider moves.
+     */
+    private applyManualFilterDebounced(type: string, filter: any): void {
         const activeObject = this.canvas.getActiveObject();
-        if (activeObject && activeObject.type === 'image') {
-            const img = activeObject as fabric.Image;
+        if (!activeObject || activeObject.type !== 'image') return;
 
-            // Save COMPREHENSIVE state to prevent any shifting/resizing
-            const state = {
-                width: img.width,
-                height: img.height,
-                scaleX: img.scaleX,
-                scaleY: img.scaleY,
-                left: img.left,
-                top: img.top,
-                cropX: img.cropX,
-                cropY: img.cropY,
-                angle: img.angle,
-                flipX: img.flipX,
-                flipY: img.flipY,
-                skewX: img.skewX,
-                skewY: img.skewY
-            };
+        const img = activeObject as fabric.Image;
 
-            const prevCaching = img.objectCaching;
-            img.set('objectCaching', false);
-
-            // Ensure safe execution
-            try {
-                // Ensure crossOrigin is set for filters to work
-                if ((img as any).crossOrigin !== 'anonymous') {
-                    img.set({ crossOrigin: 'anonymous' });
-                }
-
-                // Remove existing simple filters
-                img.filters = (img.filters || []).filter(f =>
-                    !['Grayscale', 'Invert', 'Sepia'].includes((f as any).type)
-                );
-
-                if (filterType === 'Grayscale') img.filters.push(new fabric.filters.Grayscale());
-                else if (filterType === 'Invert') img.filters.push(new fabric.filters.Invert());
-                else if (filterType === 'Sepia') img.filters.push(new fabric.filters.Sepia());
-
-                img.applyFilters();
-
-                // CRITICAL: Force Restore of all geometric properties
-                // fabric.Image.applyFilters() can sometimes reset scale or dimensions based on the new element
-                img.set(state);
-
-                // Force recalculation of coordinates
-                img.setCoords();
-                img.set('dirty', true);
-                img.set('objectCaching', prevCaching);
-
-                this.canvas.renderAll();
-                this.saveState();
-            } catch (e) {
-                console.error('Filter application failed', e);
-                img.set('objectCaching', prevCaching);
-                this.notificationService.error('Could not apply filter');
-            }
+        // Clear existing timeout for this specific filter type
+        if (this.manualFilterTimeouts.has(type)) {
+            clearTimeout(this.manualFilterTimeouts.get(type));
         }
-    }
 
-    setBrightness(value: number): void {
-        this.applyManualFilter('Brightness', new fabric.filters.Brightness({ brightness: value }));
-    }
-
-    setContrast(value: number): void {
-        this.applyManualFilter('Contrast', new fabric.filters.Contrast({ contrast: value }));
-    }
-
-    setSaturation(value: number): void {
-        this.applyManualFilter('Saturation', new fabric.filters.Saturation({ saturation: value }));
-    }
-
-    private applyManualFilter(type: string, filter: any): void {
-        const obj = this.canvas.getActiveObject();
-        if (obj && obj.type === 'image') {
-            const img = obj as fabric.Image;
-
-            // Save COMPREHENSIVE state
-            const state = {
-                width: img.width,
-                height: img.height,
-                scaleX: img.scaleX,
-                scaleY: img.scaleY,
-                left: img.left,
-                top: img.top,
-                cropX: img.cropX,
-                cropY: img.cropY,
-                angle: img.angle,
-                flipX: img.flipX,
-                flipY: img.flipY,
-                skewX: img.skewX,
-                skewY: img.skewY
-            };
-
-            const prevCaching = img.objectCaching;
-            img.set('objectCaching', false);
-
+        const timeout = setTimeout(async () => {
             try {
-                // Ensure crossOrigin is set
-                if ((img as any).crossOrigin !== 'anonymous') {
-                    img.set({ crossOrigin: 'anonymous' });
-                }
+                // Apply update to its filters array
+                await this.executeFilterOperation(img, () => {
+                    img.filters = (img.filters || []).filter(f => (f as any).type !== type);
+                    if (filter) img.filters.push(filter);
+                });
 
-                // Clean existing filter of same type
-                img.filters = (img.filters || []).filter(f => (f as any).type !== type);
-                // Add new
-                img.filters.push(filter);
-
-                img.applyFilters();
-
-                // CRITICAL: Force Restore
-                img.set(state);
-
-                img.setCoords();
-                img.set('dirty', true);
-                img.set('objectCaching', prevCaching);
-
-                this.canvas.requestRenderAll();
-
-                // Debounced save to prevent history flooding
+                // Save state after a short delay to allow more changes to bunch up
                 this.debouncedSave();
-            } catch (e) {
-                console.error(`Failed to set ${type}`, e);
-                img.set('objectCaching', prevCaching);
+            } catch (err) {
+                console.error(`Filter error [${type}]:`, err);
+            } finally {
+                this.manualFilterTimeouts.delete(type);
             }
+        }, 10); // Shorter delay for snappier feedback
+
+        this.manualFilterTimeouts.set(type, timeout);
+    }
+
+    public setBrightness(value: number): void {
+        this.applyManualFilterDebounced('Brightness', new fabric.filters.Brightness({ brightness: value }));
+    }
+
+    public setContrast(value: number): void {
+        this.applyManualFilterDebounced('Contrast', new fabric.filters.Contrast({ contrast: value }));
+    }
+
+    public setSaturation(value: number): void {
+        this.applyManualFilterDebounced('Saturation', new fabric.filters.Saturation({ saturation: value }));
+    }
+
+    /**
+     * Unified Blur handling for both images and vector shapes.
+     * Prevents dimension reset while allowing the necessary filter expansion.
+     */
+    public async setBlur(value: number): Promise<void> {
+        const obj = this.canvas.getActiveObject();
+        if (!obj) return;
+
+        if (obj.type === 'image') {
+            const img = obj as fabric.Image;
+            const blurVal = value / 10;
+
+            await this.executeFilterOperation(img, () => {
+                img.filters = (img.filters || []).filter(f => (f as any).type !== 'Blur');
+                if (blurVal > 0) {
+                    img.filters.push(new fabric.filters.Blur({ blur: blurVal }));
+                }
+            });
+            this.debouncedSave();
+        } else {
+            // Vector/Text Blur (via Shadow)
+            if (value > 0) {
+                const shadowColor = (obj as any).fill && (obj as any).fill !== 'transparent' ? (obj as any).fill : '#000000';
+                const shadow = new fabric.Shadow({
+                    color: shadowColor,
+                    blur: value * 2,
+                    offsetX: 0,
+                    offsetY: 0
+                });
+                this.updateProperty('shadow', shadow);
+            } else {
+                this.updateProperty('shadow', null);
+            }
+            this.saveState();
         }
     }
+
+    /**
+     * CORE FILTER ENGINE (Fabric.js 7.1.0 Optimized)
+     * Robust state restoration to prevent "cutting", "jumps", or "resets" during async application.
+     */
+    private async executeFilterOperation(img: fabric.Image, updateFn: () => void): Promise<void> {
+        if (!img) return;
+
+        // 1. Capture ABSOLUTE geometry state before application
+        const geometry = {
+            left: img.left,
+            top: img.top,
+            width: img.width,
+            height: img.height,
+            scaleX: img.scaleX,
+            scaleY: img.scaleY,
+            angle: img.angle,
+            flipX: img.flipX,
+            flipY: img.flipY,
+            skewX: img.skewX,
+            skewY: img.skewY,
+            originX: img.originX,
+            originY: img.originY,
+            cropX: img.cropX,
+            cropY: img.cropY
+        };
+
+        const wasCaching = img.objectCaching;
+        img.set('objectCaching', false);
+
+        try {
+            // 2. Initialize WebGL Backend if not ready
+            if (!fabric.getFilterBackend()) {
+                fabric.initFilterBackend();
+            }
+
+            // 3. Update the filters array
+            updateFn();
+
+            // 4. AWAIT the actual async application (v7 requirement)
+            const result: any = img.applyFilters();
+            if (result && typeof result.then === 'function') {
+                await result;
+            }
+
+            // 5. Restore geometry precisely
+            // This prevents v7 from resetting width/height/crop to source dimensions, 
+            // which is the root cause of the "cutting" effect.
+            img.set(geometry);
+            img.setCoords();
+
+            img.set('dirty', true);
+            img.set('objectCaching', wasCaching);
+
+            this.canvas.requestRenderAll();
+            this.triggerSelectedUpdate(); // Keep sidebar in sync
+        } catch (e) {
+            console.error('CRITICAL: Filter application failed', e);
+            img.set('objectCaching', wasCaching);
+        }
+    }
+
 
     async initCanvas(canvasId: string): Promise<void> {
         this.updateMobileState();
@@ -344,21 +376,38 @@ export class BannerService {
     private calculateCanvasDimensions(): { width: number; height: number } {
         if (typeof window === 'undefined') return { width: 1200, height: 675 };
 
-        const isMobile = window.innerWidth < 1024;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const isMobile = vw < 1024;
         this.isMobile.set(isMobile);
 
         const topNavHeight = isMobile ? 56 : 64;
-        // Mobile toolbar at bottom adds 72px
-        const bottomBarHeight = isMobile ? 72 : 0;
+
+        // Mobile toolbar height matches CSS variable per breakpoint
+        let bottomBarHeight = 0;
+        if (isMobile) {
+            if (vw <= 359) bottomBarHeight = 62;
+            else if (vw <= 479) bottomBarHeight = 66;
+            else bottomBarHeight = 72;
+        }
+
         // Left nav sidebar width (only on desktop)
         const leftNavWidth = isMobile ? 0 : 88;
         // Right sidebar (only on desktop)
         const rightSidebarWidth = isMobile ? 0 : this.sidebarWidth();
-        // Padding around canvas
-        const padding = isMobile ? 16 : 60;
 
-        const availableWidth = window.innerWidth - leftNavWidth - rightSidebarWidth - padding;
-        const availableHeight = window.innerHeight - topNavHeight - bottomBarHeight - padding;
+        // Padding around canvas: tighter on smaller screens
+        let padding: number;
+        if (!isMobile) {
+            padding = 64;   // Desktop: generous breathing room
+        } else if (vw <= 479) {
+            padding = 12;   // Small phone: minimal
+        } else {
+            padding = 20;   // Tablet/large phone
+        }
+
+        const availableWidth = vw - leftNavWidth - rightSidebarWidth - padding;
+        const availableHeight = vh - topNavHeight - bottomBarHeight - padding;
 
         const baseWidth = 1200;
         const baseHeight = 675;
@@ -372,7 +421,7 @@ export class BannerService {
             height = width * aspectRatio;
         }
         if (height > availableHeight) {
-            height = Math.max(180, availableHeight);
+            height = Math.max(160, availableHeight);
             width = height / aspectRatio;
         }
 
@@ -926,60 +975,156 @@ export class BannerService {
         });
     }
 
-    private applyTransliteration(obj: fabric.Textbox): void {
+    /**
+     * Translates the selected text object's content (English meaning -> Marathi meaning)
+     */
+    public async translateSelectedText() {
+        const obj = this.canvas.getActiveObject() as fabric.Textbox;
+        if (obj && (obj.type === 'textbox' || obj.type === 'i-text')) {
+            const textToTranslate = obj.text || '';
+            const toastId = this.notificationService.showToast('Translating to Marathi...', 'info', 0);
+
+            try {
+                const translated = await this.translitService.translateToMarathi(textToTranslate);
+                this.notificationService.removeToast(toastId);
+
+                if (translated && translated !== textToTranslate) {
+                    obj.set({ text: translated, fontFamily: 'Noto Sans Devanagari, sans-serif' });
+
+                    // SYNC LENGTH MAP: Prevents real-time engine from getting confused after bulk change
+                    this.lastTextLengthMap.set(obj, translated.length);
+
+                    this.canvas.requestRenderAll();
+                    this.saveState();
+                    this.notificationService.showToast('Translation applied!', 'success', 2000);
+                } else {
+                    this.notificationService.showToast('Text is already in Marathi or same as original.', 'info', 2000);
+                }
+            } catch (err) {
+                this.notificationService.removeToast(toastId);
+                this.notificationService.showToast('Translation failed. Please try again.', 'error', 3000);
+                console.error('Translation failed', err);
+            }
+        }
+    }
+
+    /**
+     * Bulk Transliterates the selected text (Phonetic English -> Marathi Script)
+     * e.g., "Namaskar" -> "नमस्कार"
+     */
+    public async transliterateBulkSelectedText() {
+        const obj = this.canvas.getActiveObject() as fabric.Textbox;
+        if (obj && (obj.type === 'textbox' || obj.type === 'i-text')) {
+            const textToConvert = obj.text || '';
+            const toastId = this.notificationService.showToast('Transliterating...', 'info', 0);
+
+            try {
+                const converted = await this.translitService.getGoogleTransliteration(textToConvert);
+                this.notificationService.removeToast(toastId);
+
+                if (converted && converted !== textToConvert) {
+                    obj.set({ text: converted, fontFamily: 'Noto Sans Devanagari, sans-serif' });
+
+                    // SYNC LENGTH MAP: Prevents real-time engine from getting confused after bulk change
+                    this.lastTextLengthMap.set(obj, converted.length);
+
+                    this.canvas.requestRenderAll();
+                    this.saveState();
+                    this.notificationService.showToast('Phonetic conversion complete!', 'success', 2000);
+                } else {
+                    this.notificationService.showToast('Text is already in Marathi or no changes needed.', 'info', 2000);
+                }
+            } catch (err) {
+                this.notificationService.removeToast(toastId);
+                this.notificationService.showToast('Phonetic conversion failed. Please try again.', 'error', 3000);
+                console.error('Bulk transliteration failed', err);
+            }
+        }
+    }
+
+    private async applyTransliteration(obj: fabric.Textbox): Promise<void> {
+        // Skip if precision mode is OFF or history is loading (Undo/Redo)
+        if (!this.precisionMode() || this.isHistoryLoading) return;
+
         const text = obj.text || '';
+        const lastLength = this.lastTextLengthMap.get(obj) || 0;
+        this.lastTextLengthMap.set(obj, text.length);
+
+        // CRITICAL: Skip if text was DELETED or shortened (allows removing Marathi characters precisely)
+        if (text.length <= lastLength) return;
+
         const selectionStart = obj.selectionStart || 0;
         const selectionEnd = obj.selectionEnd || 0;
 
-        // Only process if it's a simple cursor (no selection range) and not at startup
+        // Only process if it's a simple cursor (no selection range)
         if (selectionStart !== selectionEnd || selectionStart === 0) return;
 
         const textBeforeCursor = text.substring(0, selectionStart);
 
         // 1. Determine the cluster to transliterate
-        // We match ONLY the cluster of alphanumeric characters or special phonetic markers 
-        // that is IMMEDIATELY before the cursor. This stops at spaces, punctuation, etc.
-        const clusterMatch = textBeforeCursor.match(/([\u0900-\u097FA-Za-z0-9'_\^]+)$/);
+        // We match Latin letters + phonetic markers.
+        // Cluster match: [Marathi/Latin chars][Optional terminal space]
+        const clusterMatch = textBeforeCursor.match(/([A-Za-z\u0900-\u097F'_\^]+)(\s?)$/);
 
         if (clusterMatch) {
-            const currentWord = clusterMatch[1];
-            const wordStart = selectionStart - currentWord.length;
+            const rawCluster = clusterMatch[1];
+            const trailingSpace = clusterMatch[2] || '';
+            const isWordComplete = trailingSpace.length > 0;
+            const matchStart = selectionStart - clusterMatch[0].length;
 
-            // 2. Only process if the cluster contains at least one English character
-            if (!/[A-Za-z]/.test(currentWord)) {
-                return;
-            }
+            // Only process if there's at least one Latin character
+            if (!/[A-Za-z]/.test(rawCluster)) return;
 
             try {
-                // If it contains Marathi characters, convert everything to ITRANS first to allow phonetic editing
-                const isMixed = /[\u0900-\u097F]/.test(currentWord);
-                const itransWord = isMixed ? this.translitService.toItrans(currentWord) : currentWord;
-                const transliterated = this.translitService.phoneticMarathi(itransWord);
+                // Convert Marathi parts back to ITRANS to allow phonetic correction
+                const itransWord = this.translitService.toItrans(rawCluster);
 
-                if (transliterated && transliterated !== currentWord) {
-                    // Build the new text by replacing ONLY the current cluster
-                    const newText = text.substring(0, wordStart) + transliterated + text.substring(selectionStart);
+                let transliterated: string;
+                if (isWordComplete) {
+                    // Use Google API for final confirmation on space
+                    transliterated = await this.translitService.getGoogleTransliteration(itransWord);
+                } else {
+                    // Use fast local rule-based transliteration while typing
+                    transliterated = this.translitService.transliterateLocal(itransWord, false);
+                }
 
-                    // Lock events during text replacement
+                if (transliterated && transliterated !== rawCluster) {
+                    const newText = text.substring(0, matchStart) + transliterated + trailingSpace + text.substring(selectionStart);
+
+                    // Block re-entry
                     (obj as any)._isTransliterating = true;
+
+                    // Update Fabric Object
                     obj.set('text', newText);
 
-                    // Maintain cursor position exactly after the transliterated word
-                    const newCursor = wordStart + transliterated.length;
+                    // Maintain Cursor
+                    const newCursor = matchStart + transliterated.length + trailingSpace.length;
                     obj.selectionStart = newCursor;
                     obj.selectionEnd = newCursor;
 
-                    // Ensure Devanagari font is applied
-                    if (obj.get('fontFamily') !== 'Noto Sans Devanagari, sans-serif') {
+                    // SYNC HIDDEN TEXTAREA (Fabric.js internal)
+                    // This prevents Fabric from resetting to English on next stroke
+                    if (obj.isEditing && (obj as any).hiddenTextarea) {
+                        const textarea = (obj as any).hiddenTextarea as HTMLTextAreaElement;
+                        textarea.value = newText;
+                        textarea.setSelectionRange(newCursor, newCursor);
+                    }
+
+                    // Force Marathi Font
+                    if (obj.fontFamily !== 'Noto Sans Devanagari, sans-serif') {
                         obj.set('fontFamily', 'Noto Sans Devanagari, sans-serif');
                     }
 
                     this.canvas.requestRenderAll();
 
-                    // Release lock after a short delay to allow Fabric internals to catch up
+                    // CRITICAL: Save state for Undo/Redo support on every completed word
+                    if (isWordComplete) {
+                        this.saveState();
+                    }
+
                     setTimeout(() => {
                         (obj as any)._isTransliterating = false;
-                    }, 50);
+                    }, 10);
                 }
             } catch (err) {
                 console.error('[Transliteration] Processing failed:', err);
@@ -1286,6 +1431,7 @@ export class BannerService {
                 // Explicitly set crossOrigin to support filters on this object
                 img.set({ crossOrigin: 'anonymous' });
 
+                (img as any).id = 'img_' + Math.random().toString(36).substr(2, 9);
                 (img as any).idbId = idbId;
 
                 // Track original source immediately for future "restore original" or high-res export
@@ -1462,96 +1608,112 @@ export class BannerService {
 
     // Template Management
     async saveTemplate(name: string, category: string = 'Template', forceNew: boolean = false): Promise<boolean> {
-        // 1. Deselect everything to avoid saving selection handles/borders in thumbnail
-        this.canvas.discardActiveObject();
-        this.canvas.requestRenderAll();
+        this.isSaving.set(true);
+        console.log(`[Save Template] Starting save for: ${name} (${category})`);
 
-        // 2. Prepare JSON with externalized images
-        // CRITICAL: Create a DEEP COPY to avoid modifying live canvas objects
-        const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
-        const json = JSON.parse(JSON.stringify(rawJson)); // Deep clone
+        try {
+            // 1. Deselect everything for a clean state
+            if (this.canvas) {
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+            }
 
-        // Save dimensions to ensure accurate restore
-        (json as any).width = this.canvas.width;
-        (json as any).height = this.canvas.height;
+            // 2. Prepare JSON (High-Fidelity)
+            const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
+            const json = JSON.parse(JSON.stringify(rawJson));
+            (json as any).width = this.canvas.width;
+            (json as any).height = this.canvas.height;
 
-        // Process the COPY, not the original canvas data
-        await this.processImagesForStorage(json);
+            // 3. Process/Offload images to IDB
+            await this.processImagesForStorage(json);
 
-        // 3. Generate clean thumbnail BEFORE any modifications
-        // OPTIMIZATION: Reduced multiplier and quality for "infinite" storage support
-        const thumbnail = this.canvas.toDataURL({
-            format: 'jpeg',
-            multiplier: 0.15,
-            quality: 0.7,
-            enableRetinaScaling: false
-        });
+            // 4. Generate Thumbnail
+            const thumbnail = this.canvas.toDataURL({
+                format: 'jpeg',
+                multiplier: 0.15,
+                quality: 0.7,
+                enableRetinaScaling: false
+            });
 
-        // 4. Persistence Architecture: Shadow Storage
-        // We store the heavy JSON in a dedicated record (designs store) 
-        // and keep only metadata in the listing.
-        const allSaved = await this.imageStorage.getTemplates();
-        const activeId = this.activeTemplateId();
+            // 5. Build Metadata
+            const allSaved = await this.imageStorage.getTemplates() || [];
+            const activeId = this.activeTemplateId();
 
-        // LOGIC: If forceNew is true, we ALWAYS create a new entry.
-        // Otherwise, we try to update ONLY if the activeId exists AND matches the current intention.
-        const existingIndex = forceNew ? -1 : allSaved.findIndex(t => t.id === activeId && t.isCustom);
+            // Logic: Update if editing existing user template, otherwise create new
+            const existingIndex = forceNew ? -1 : allSaved.findIndex(t => t.id === activeId && t.isCustom);
 
-        let updatedTemplates: Template[];
-        let targetId: string;
+            let targetId: string;
+            let updatedList: Template[] = [...allSaved];
 
-        if (existingIndex !== -1 && activeId) {
-            targetId = activeId;
-            updatedTemplates = [...allSaved];
-            updatedTemplates[existingIndex] = {
-                ...updatedTemplates[existingIndex],
-                name: name,
-                json: null,
-                thumbnail,
-                category, // Update category if it changed
-                date: new Date()
-            };
-            console.log(`[Library] Updating existing item: ${targetId} (${name})`);
-        } else {
-            // Force unique ID for new saves
-            targetId = 'tpl_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
-            const newTemplate: Template = {
-                id: targetId,
-                name,
-                category,
-                json: null,
-                thumbnail,
-                isCustom: true,
-                date: new Date()
-            };
-            updatedTemplates = [newTemplate, ...allSaved];
-            console.log(`[Library] Creating NEW item: ${targetId} (${name})`);
-        }
+            if (existingIndex !== -1 && activeId) {
+                targetId = activeId;
+                updatedList[existingIndex] = {
+                    ...updatedList[existingIndex],
+                    name,
+                    thumbnail,
+                    category,
+                    date: new Date()
+                };
+            } else {
+                targetId = 'tpl_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+                const newTpl: Template = {
+                    id: targetId,
+                    name,
+                    category,
+                    thumbnail,
+                    json: null, // Payload moves to shadow store
+                    isCustom: true,
+                    date: new Date()
+                };
+                updatedList = [newTpl, ...allSaved];
+            }
 
-        // 5. Save the actual payload to the professional shadow store
-        console.log(`[Save Template] Saving design data to shadow storage with ID: ${targetId}`);
-        await this.persistenceService.saveDesign(targetId, json);
-        console.log(`[Save Template] ✅ Shadow storage save complete for ID: ${targetId}`);
+            // 6. PERSISTENCE LAYER (LOCAL FIRST)
+            // A. Save Payload (Deep Data)
+            await this.persistenceService.saveDesign(targetId, json);
 
-        // REMOVED destructive sanitization that was causing items to disappear if offload lagged
-        // If an image stays as blob:, it's better than becoming "" (invisible)
+            // B. Save Listing (Metadata)
+            const success = await this.saveTemplatesToStorage(updatedList);
+            if (!success) throw new Error('Failed to update local listing store');
 
-        console.log(`[Library] Saving library with ${updatedTemplates.length} entries.`);
-        if (await this.saveTemplatesToStorage(updatedTemplates)) {
-            // Force immediate reload of all signals
+            // 7. CLOUD SYNC (BACKGROUND - NON-BLOCKING)
+            this.syncTemplateToCloud(updatedList.find(t => t.id === targetId)!, json);
+
+            // 8. Finalize UI
             await this.initSavedTemplates();
             this.activeTemplateId.set(targetId);
-            this.notificationService.success(`${category} "${name}" saved!`);
+            this.notificationService.success(`${category} saved locally!`);
+
             return true;
+
+        } catch (e) {
+            console.error('❌ Final Template Save Failure', e);
+            this.notificationService.error('Failed to save: ' + (e instanceof Error ? e.message : 'Unknown error'));
+            return false;
+        } finally {
+            this.isSaving.set(false);
         }
-        console.error('[Save Template] ❌ Failed to save metadata listing');
-        return false;
+    }
+
+    private async syncTemplateToCloud(template: Template, json: any) {
+        try {
+            await this.bannerCloudService.saveTemplateToCloud(template, json);
+            console.log('[Cloud] ✅ Sync successful');
+        } catch (err) {
+            console.warn('[Cloud] ⚠️ Sync pending (offline or error)', err);
+        }
     }
 
     async deleteTemplate(templateId: string): Promise<void> {
         const allSaved = await this.imageStorage.getTemplates();
         const updated = allSaved.filter(t => t.id !== templateId);
         if (await this.saveTemplatesToStorage(updated)) {
+            // Cloud Delete
+            try {
+                await this.bannerCloudService.deleteDesignFromCloud(templateId);
+            } catch (cloudErr) {
+                console.warn('Cloud sync deletion failed', cloudErr);
+            }
             await this.initSavedTemplates();
         }
     }
@@ -1567,49 +1729,125 @@ export class BannerService {
         }
     }
 
-    private async initSavedTemplates(): Promise<void> {
-        try {
-            console.log('🔄 Library Sync: Initializing production templates...');
+    public async refreshLibrary(): Promise<void> {
+        await Promise.all([
+            this.initSavedTemplates(),
+            this.initSavedProjects(),
+            this.initCutouts()
+        ]);
+    }
 
-            // 1. Load System Templates (via Fetch)
-            let systemTemplates: Template[] = [];
-            try {
-                // Production-safe path as configured in angular.json
-                const response = await fetch('/assets/templates/system_templates.json');
-                if (response.ok) {
-                    systemTemplates = await response.json();
-                    systemTemplates.forEach(t => t.isSystem = true);
-                }
-            } catch (err) {
-                console.warn('[System Library] Failed to load assets:', err);
+    private async initSavedTemplates(): Promise<void> {
+        this.isProjectLoading.set(true);
+        console.log('[Library] Initializing...');
+
+        try {
+            // 1. PHASE 1: Load Local Data (High Priority)
+            const localTemplates = await this.imageStorage.getTemplates() || [];
+            localTemplates.forEach(t => t.isCustom = true);
+
+            // Show local items IMMEDIATELY
+            this.distributeToSignals(localTemplates);
+
+            // Set loading to false early if we have local data, 
+            // so the user isn't stuck behind a spinner if cloud is slow.
+            if (localTemplates.length > 0) {
+                this.isProjectLoading.set(false);
             }
 
-            // 2. Load User Templates (from IndexedDB)
-            let userTemplates: Template[] = await this.imageStorage.getTemplates();
-            if (!Array.isArray(userTemplates)) userTemplates = [];
-            userTemplates.forEach(t => t.isCustom = true);
+            // 2. PHASE 2: Background Cloud Fetch
+            let systemTemplates: Template[] = [];
+            let cloudUserDesigns: Template[] = [];
 
-            // 3. Merge and Sort
-            // We keep them separate in memory but merge for the signal
-            const allItems: Template[] = [...systemTemplates, ...userTemplates];
+            try {
+                // Add a reasonable timeout for cloud fetch (5 seconds)
+                const cloudPromise = Promise.all([
+                    this.bannerCloudService.getSystemTemplates(),
+                    this.bannerCloudService.getUserDesigns()
+                ]);
 
-            allItems.sort((a, b) => {
-                const dateB = b.date ? new Date(b.date).getTime() : 0;
-                const dateA = a.date ? new Date(a.date).getTime() : 0;
-                return dateB - dateA;
+                const [sys, user] = await cloudPromise;
+                systemTemplates = sys || [];
+                cloudUserDesigns = user || [];
+            } catch (cloudErr) {
+                console.warn('[Library] Cloud sync background failed.', cloudErr);
+            }
+
+            // 3. PHASE 3: Merge & Final Sort
+            const userMap = new Map<string, Template>();
+
+            // Cloud data baseline
+            cloudUserDesigns.forEach(t => {
+                t.isCustom = true;
+                userMap.set(t.id, t);
             });
 
-            // 4. Distribute to signals
-            this.savedTemplates.set(allItems.filter(t =>
-                !t.category || ['Template', 'Custom', 'Imported'].includes(t.category) || t.isSystem
-            ));
-            this.savedDesigns.set(allItems.filter(t => t.category === 'Design'));
-            this.savedBackgrounds.set(allItems.filter(t => t.category === 'Background'));
+            // Local data preference
+            localTemplates.forEach(t => {
+                const existing = userMap.get(t.id);
+                // Simple date-based merge or existence check
+                if (!existing || this.isNewer(t, existing)) {
+                    userMap.set(t.id, t);
+                }
+            });
 
-            console.log(`✅ Library Sync Complete: ${systemTemplates.length} System | ${userTemplates.length} User`);
+            const mergedUserTemplates = Array.from(userMap.values());
+            const allItems = [...systemTemplates, ...mergedUserTemplates];
+
+            // 4. Safe Sort (Newest first)
+            allItems.sort((a, b) => {
+                const timeB = this.getSafeTime(b);
+                const timeA = this.getSafeTime(a);
+                return timeB - timeA;
+            });
+
+            // 5. Final Distribution
+            this.distributeToSignals(allItems);
+            console.log(`✅ Library Sync Result: ${allItems.length} total items.`);
+
         } catch (e) {
             console.error('❌ Template system failure', e);
+        } finally {
+            this.isProjectLoading.set(false);
         }
+    }
+
+    private getSafeTime(item: any): number {
+        if (!item || !item.date) return 0;
+        try {
+            const time = new Date(item.date).getTime();
+            return isNaN(time) ? 0 : time;
+        } catch {
+            return 0;
+        }
+    }
+
+    private isNewer(current: Template, existing: Template): boolean {
+        const timeCurrent = this.getSafeTime(current);
+        const timeExisting = this.getSafeTime(existing);
+        return timeCurrent > timeExisting;
+    }
+
+    private distributeToSignals(items: Template[]) {
+        const templates: Template[] = [];
+        const designs: Template[] = [];
+        const backgrounds: Template[] = [];
+
+        for (const item of items) {
+            const cat = (item.category || '').toLowerCase();
+            if (cat === 'background') {
+                backgrounds.push(item);
+            } else if (cat === 'design') {
+                designs.push(item);
+            } else {
+                // Default to templates
+                templates.push(item);
+            }
+        }
+
+        this.savedTemplates.set(templates);
+        this.savedDesigns.set(designs);
+        this.savedBackgrounds.set(backgrounds);
     }
 
     /**
@@ -1773,8 +2011,30 @@ export class BannerService {
 
     async initCutouts(): Promise<void> {
         try {
-            const saved = await this.imageStorage.getCutouts();
-            this.cutouts.set(saved);
+            // 1. PHASE 1: Load Local Cutouts immediately
+            let localCutouts = await this.imageStorage.getCutouts() || [];
+            this.cutouts.set(localCutouts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+            console.log(`[Library] 1. Local cutouts loaded: ${localCutouts.length}`);
+
+            // 2. PHASE 2: Load Cloud Cutouts
+            let cloudCutouts: any[] = [];
+            try {
+                cloudCutouts = await this.bannerCloudService.getCloudCutouts() || [];
+                console.log(`[Library] 2. Cloud cutouts loaded: ${cloudCutouts.length}`);
+
+                // 3. PHASE 3: Merge Strategy
+                const cutoutMap = new Map<string, any>();
+                cloudCutouts.forEach(c => cutoutMap.set(c.id, c));
+                localCutouts.forEach(c => cutoutMap.set(c.id, c)); // Local preference
+
+                const merged = Array.from(cutoutMap.values())
+                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                this.cutouts.set(merged);
+                console.log(`✅ Cutouts Sync Complete: ${merged.length} Total.`);
+            } catch (cloudErr) {
+                console.warn('Cloud cutouts sync failed', cloudErr);
+            }
         } catch (e) {
             console.error('Failed to load cutouts', e);
         }
@@ -1789,28 +2049,30 @@ export class BannerService {
 
         const originalImg = activeObject as fabric.Image;
         const imgElement = (originalImg as any)._element || (originalImg as any).getElement?.();
-        const originalSrc = (originalImg as any).src || imgElement?.src;
+        const originalSrc = (originalImg as any).src || (originalImg as fabric.Image).getSrc() || (originalImg as any).originalSrc;
 
         if (!originalSrc && !imgElement) {
             this.notificationService.error('Could not identify image source');
             return;
         }
 
+        // Assign a temporary ID if missing
+        if (!(originalImg as any).id) {
+            (originalImg as any).id = 'img_' + Math.random().toString(36).substr(2, 9);
+        }
+        const currentId = (originalImg as any).id;
+
         try {
             this.isRemovingBg.set(true);
+            this.processingObjectId.set(currentId);
             this.bgRemovalProgress.set(0);
-            this.bgRemovalStatus.set('Loading AI engine...');
+            this.bgRemovalStatus.set('Initializing AI...');
 
             if (!this.rbFunctionCache) {
-                this.bgRemovalStatus.set('Initializing AI engine...');
                 const imglyModule = await import('@imgly/background-removal');
                 this.rbFunctionCache = imglyModule.removeBackground || (imglyModule as any).default?.removeBackground || (imglyModule as any).default;
             }
             const rbFunction = this.rbFunctionCache;
-
-            if (typeof rbFunction !== 'function') {
-                throw new Error('Background removal function not found in loaded module.');
-            }
 
             const config: any = {
                 progress: (key: string, current: number, total: number) => {
@@ -1820,73 +2082,81 @@ export class BannerService {
                     if (key.includes('fetch')) {
                         this.bgRemovalStatus.set(`Downloading Model... ${percent}%`);
                     } else if (key.includes('compute')) {
-                        this.bgRemovalStatus.set(`Analyzing... ${percent}%`);
+                        this.bgRemovalStatus.set(`Processing AI... ${percent}%`);
                     } else {
-                        this.bgRemovalStatus.set(`Processing... ${percent}%`);
+                        this.bgRemovalStatus.set(`Refining... ${percent}%`);
                     }
                 },
-                model: 'isnet_fp16',
+                model: 'isnet', // Optimized standard model
                 output: {
                     format: 'image/png',
-                    quality: 0.8
+                    quality: 0.6 // Lower bitstream quality for faster processing
                 },
-                proxyToWorker: false
+                proxyToWorker: true,
+                device: 'webgl' // Favor WebGL acceleration
             };
 
             const resultBlob = await rbFunction(originalSrc || imgElement, config);
             const resultUrl = URL.createObjectURL(resultBlob);
+
             const imgObj = new Image();
             imgObj.src = resultUrl;
 
             imgObj.onload = async () => {
                 const newImg = new fabric.Image(imgObj);
 
-                const props = [
-                    'left', 'top', 'scaleX', 'scaleY', 'angle',
-                    'originX', 'originY', 'flipX', 'flipY',
-                    'opacity', 'skewX', 'skewY'
-                ];
-
-                props.forEach(p => {
-                    if ((originalImg as any)[p] !== undefined) {
-                        (newImg as any)[p] = (originalImg as any)[p];
-                    }
-                });
+                // Preserve ALL geometric state including crops
+                const geometry = {
+                    left: originalImg.left,
+                    top: originalImg.top,
+                    width: originalImg.width,
+                    height: originalImg.height,
+                    scaleX: originalImg.scaleX,
+                    scaleY: originalImg.scaleY,
+                    angle: originalImg.angle,
+                    flipX: originalImg.flipX,
+                    flipY: originalImg.flipY,
+                    skewX: originalImg.skewX,
+                    skewY: originalImg.skewY,
+                    originX: originalImg.originX,
+                    originY: originalImg.originY,
+                    cropX: originalImg.cropX,
+                    cropY: originalImg.cropY,
+                    opacity: originalImg.opacity
+                };
 
                 const persistentSrc = (originalImg as any).idbId ? `indexeddb://${(originalImg as any).idbId}` : originalSrc;
                 (newImg as any).originalSrc = persistentSrc;
                 (newImg as any).isBgRemoved = true;
+                (newImg as any).id = currentId;
 
                 const index = this.canvas.getObjects().indexOf(originalImg);
-                this.canvas.remove(originalImg);
-                this.canvas.add(newImg);
-
                 if (index !== -1) {
+                    this.canvas.remove(originalImg);
+                    this.canvas.add(newImg);
                     this.canvas.moveObjectTo(newImg, index);
+                    this.canvas.setActiveObject(newImg);
+                    newImg.set(geometry);
+                    newImg.setCoords();
+                    this.canvas.renderAll();
                 }
-
-                this.canvas.setActiveObject(newImg);
-                this.canvas.renderAll();
 
                 const cutoutId = await this.saveAsCutout(resultBlob, 'AI Cutout ' + new Date().toLocaleTimeString());
                 (newImg as any).idbId = cutoutId;
 
                 this.isRemovingBg.set(false);
+                this.processingObjectId.set(null);
                 this.saveState();
                 this.activeBlobUrls.push(resultUrl);
-                this.notificationService.success('Done! Clear vision achieved.');
+                this.triggerSelectedUpdate();
+                this.notificationService.success('Background Removed!');
             };
 
         } catch (error: any) {
-            console.error('Final Background Removal Error:', error);
-            let errMsg = error.message || 'Unknown processing error';
-
-            if (errMsg.includes('Symbol.iterator') || errMsg.includes('iterable')) {
-                errMsg = 'Model initialization failed. Please check if COOP/COEP headers are needed or refresh the page.';
-            }
-
-            this.notificationService.error('AI Error: ' + errMsg);
+            console.error('Optimized Removal Error:', error);
+            this.notificationService.error('AI Error: ' + (error.message || 'Processing failed'));
             this.isRemovingBg.set(false);
+            this.processingObjectId.set(null);
         }
     }
 
@@ -2170,6 +2440,17 @@ export class BannerService {
     async saveAsCutout(blob: Blob, name: string): Promise<string> {
         try {
             const id = await this.imageStorage.saveCutout(blob, name);
+
+            // Cloud Sync
+            try {
+                const thumb = await this.imageStorage.blobToDataURL(blob);
+                await this.bannerCloudService.uploadCutoutToCloud({
+                    id, name, blob, thumbnail: thumb, timestamp: Date.now()
+                });
+            } catch (cloudErr) {
+                console.warn('Failed to sync cutout to cloud', cloudErr);
+            }
+
             await this.initCutouts(); // Refresh the list
             return id;
         } catch (e) {
@@ -2204,6 +2485,12 @@ export class BannerService {
     async deleteCutout(id: string): Promise<void> {
         try {
             await this.imageStorage.deleteCutout(id);
+            // Cloud Delete
+            try {
+                await this.bannerCloudService.deleteCutoutFromCloud(id);
+            } catch (cloudErr) {
+                console.warn('Cloud cutout deletion failed', cloudErr);
+            }
             await this.initCutouts();
         } catch (e) {
             console.error('Failed to delete cutout', e);
@@ -3756,91 +4043,123 @@ export class BannerService {
     // Projects Persistence
     private async initSavedProjects(): Promise<void> {
         try {
-            let saved = await this.imageStorage.getProjects();
-            // Sort by date descending
-            if (saved) {
-                saved = saved.sort((a: any, b: any) => (b.date || 0) - (a.date || 0));
-                this.savedProjects.set(saved);
+            // 1. PHASE 1: Load Local Projects (Instantly responsive)
+            let local = await this.imageStorage.getProjects() || [];
+            this.savedProjects.set(local.sort((a, b) => (b.date || 0) - (a.date || 0)));
+            console.log(`[Projects] 1. Local projects loaded: ${local.length}`);
+
+            // 2. PHASE 2: Fetch Cloud Projects (Background)
+            try {
+                const cloud = await this.bannerCloudService.getCloudProjects() || [];
+
+                // 3. PHASE 3: Merge
+                const projectMap = new Map<string, any>();
+                cloud.forEach(p => projectMap.set(p.id, p));
+                local.forEach(p => projectMap.set(p.id, p)); // Preference for local
+
+                const merged = Array.from(projectMap.values())
+                    .sort((a, b) => (b.date || 0) - (a.date || 0));
+
+                this.savedProjects.set(merged);
+                console.log(`✅ Projects Sync OK: ${merged.length} found.`);
+            } catch (cloudErr) {
+                console.warn('Projects background sync skipped', cloudErr);
             }
         } catch (e) {
-            console.warn('Failed to load saved projects', e);
+            console.warn('Failed to load projects listing', e);
         }
     }
 
-    public async saveProject(name: string = 'Untitled Design'): Promise<void> {
+    public async saveProject(name?: string): Promise<void> {
         this.isSaving.set(true);
-        this.canvas.discardActiveObject();
-        this.canvas.requestRenderAll();
+        console.log('[Save Project] Starting save process...');
 
-        const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
-        // CRITICAL FIX: Deep-clone before processing to avoid mutating live canvas objects
-        const json = JSON.parse(JSON.stringify(rawJson));
-        // Force stable indexeddb:// refs before offloading
-        this.forceStableRefs(json);
-        // Save dimensions for accurate restoration
-        (json as any).width = this.canvas.width;
-        (json as any).height = this.canvas.height;
-        await this.processImagesForStorage(json);
-        const finalJson = JSON.stringify(json);
+        try {
+            // 1. Cleanup canvas for snapshot
+            if (this.canvas) {
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+            }
 
-        const thumbnail = this.canvas.toDataURL({
-            format: 'jpeg',
-            quality: 0.6,
-            multiplier: 0.15
-        });
+            // 2. High-Fidelity Serialization
+            const rawJson = this.canvas.toObject(this.SERIALIZE_PROPS);
+            const json = JSON.parse(JSON.stringify(rawJson));
+            this.forceStableRefs(json);
 
-        const current = this.savedProjects();
-        const activeId = this.activeProjectId();
-        let updated: SavedProject[];
-        let targetId: string;
+            (json as any).width = this.canvas.width;
+            (json as any).height = this.canvas.height;
 
-        if (activeId) {
-            const existingIndex = current.findIndex(p => p.id === activeId);
+            // 3. Offload Images to Storage
+            await this.processImagesForStorage(json);
 
-            if (existingIndex !== -1) {
+            // 4. Generate Thumbnail
+            const thumbnail = this.canvas.toDataURL({
+                format: 'jpeg',
+                multiplier: 0.15,
+                quality: 0.6
+            });
+
+            // 5. Build Metadata
+            const current = await this.imageStorage.getProjects() || [];
+            const activeId = this.activeProjectId();
+
+            let targetId: string;
+            let updatedList: SavedProject[];
+
+            const existingIndex = activeId ? current.findIndex(p => p.id === activeId) : -1;
+
+            if (existingIndex !== -1 && activeId) {
                 targetId = activeId;
-                // Safe Update
-                // We create a new array and a new object for the updated project
-                updated = [...current];
-                updated[existingIndex] = {
-                    ...updated[existingIndex],
-                    name: name || updated[existingIndex].name,
-                    json: '', // Shadow storage
+                updatedList = [...current];
+                updatedList[existingIndex] = {
+                    ...updatedList[existingIndex],
+                    name: name || updatedList[existingIndex].name,
                     thumbnail,
                     date: Date.now()
                 };
             } else {
-                // If activeId not found (rare), treat as new
-                targetId = Date.now().toString();
+                targetId = 'proj_' + Date.now();
                 const newProject: SavedProject = {
                     id: targetId,
-                    name,
-                    json: '',
+                    name: name || 'Untitled Design',
+                    json: '', // Payload in shadow store
                     thumbnail,
                     date: Date.now()
                 };
-                updated = [newProject, ...current];
-                this.activeProjectId.set(targetId);
+                updatedList = [newProject, ...current];
             }
-        } else {
-            targetId = Date.now().toString();
-            const newProject: SavedProject = {
-                id: targetId,
-                name,
-                json: '', // Shadow storage
-                thumbnail,
-                date: Date.now()
-            };
-            updated = [newProject, ...current];
+
+            // 6. PERSISTENCE LAYER (LOCAL FIRST)
+            // A. Save Payload (Shadow Store)
+            await this.persistenceService.saveDesign(targetId, json);
+
+            // B. Save Metadata List
+            await this.imageStorage.saveProjects(updatedList);
+
+            // 7. UI Update
+            this.savedProjects.set(updatedList);
             this.activeProjectId.set(targetId);
+
+            // 8. CLOUD SYNC (BACKGROUND)
+            this.syncProjectToCloud(updatedList.find(p => p.id === targetId)!, json);
+
+            this.notificationService.success('Project saved locally!');
+
+        } catch (e) {
+            console.error('❌ Final Project Save Failure', e);
+            this.notificationService.error('Failed to save project');
+        } finally {
+            this.isSaving.set(false);
         }
+    }
 
-        // Save bulky JSON to shadow store
-        await this.persistenceService.saveDesign(targetId, json);
-
-        this.savedProjects.set(updated);
-        await this.imageStorage.saveProjects(updated);
-        this.isSaving.set(false);
+    private async syncProjectToCloud(project: any, json: any) {
+        try {
+            await this.bannerCloudService.saveProjectToCloud(project, json);
+            console.log('[Cloud] ✅ Project synced successfully');
+        } catch (e) {
+            console.warn('[Cloud] ⚠️ Project sync failed (offline or config error)', e);
+        }
     }
 
 
@@ -3925,6 +4244,13 @@ export class BannerService {
         const updated = this.savedProjects().filter(p => p.id !== id);
         this.savedProjects.set(updated);
         await this.imageStorage.saveProjects(updated);
+
+        // Cloud Delete
+        try {
+            await this.bannerCloudService.deleteProjectFromCloud(id);
+        } catch (cloudErr) {
+            console.warn('Cloud project deletion failed', cloudErr);
+        }
     }
 
     // Import External Template

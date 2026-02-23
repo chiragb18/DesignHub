@@ -86,3 +86,11 @@
     <app-mobile-toolbar *ngIf="bannerService.isMobile()"></app-mobile-toolbar>
 </div>
 <app-notification-container></app-notification-container>
+
+<!-- GLOBAL LOADING OVERLAY -->
+<div class="global-loading-overlay" *ngIf="bannerService.isSaving() || bannerService.isProjectLoading()">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">
+        {{ bannerService.isSaving() ? 'Saving Design...' : 'Syncing Library...' }}
+    </div>
+</div>

@@ -1,4 +1,4 @@
-import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { NavbarComponent } from './navbar/navbar';
 import { RightSidebarComponent } from './right-sidebar/right-sidebar';
@@ -26,6 +26,12 @@ export class App {
 
   private onMouseMove = (event: MouseEvent) => this.onResizing(event);
   private onMouseUp = () => this.stopResizing();
+
+  // Debounce handled by the service internally
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.bannerService.handleResize();
+  }
 
   startResizing(event: MouseEvent) {
     this.isResizing = true;

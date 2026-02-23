@@ -3,7 +3,7 @@
 :root {
     --primary-color: #7c3aed;
     --primary-hover: #6d28d9;
-    --bg-light: #f8fafc;
+    --bg-light: #f1f5f9;
     --border-color: #e2e8f0;
     --text-main: #1e293b;
     --text-muted: #64748b;
@@ -21,9 +21,12 @@
     box-sizing: border-box;
 }
 
+html,
 body {
     margin: 0;
     padding: 0;
+    height: 100%;
+    height: 100dvh;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
     overscroll-behavior: none;
@@ -66,15 +69,21 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 20px 0;
-    gap: 12px;
+    padding: 16px 0;
+    gap: 8px;
     z-index: 100;
     flex-shrink: 0;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
 
     button {
-        width: 60px;
-        height: 60px;
+        width: 58px;
+        height: 58px;
         background: #ffffff;
         border: 1px solid #f1f5f9;
         color: var(--text-muted);
@@ -83,16 +92,17 @@ body {
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         gap: 2px;
-        border-radius: 16px;
+        border-radius: 14px;
         margin: 0;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+        flex-shrink: 0;
 
         .material-symbols-outlined {
-            font-size: 24px;
+            font-size: 22px;
             font-variation-settings: 'FILL' 0;
-            transition: transform 0.3s ease;
+            transition: transform 0.25s ease;
         }
 
         &:hover {
@@ -127,17 +137,19 @@ body {
 
     .nav-spacer {
         flex: 1;
+        min-height: 16px;
     }
 }
 
 /* ─── Sidebar Resizer ────────────────────────────────────── */
 .sidebar-resizer {
-    width: 4px;
+    width: 5px;
     background: transparent;
     cursor: col-resize;
     position: relative;
     z-index: 200;
     transition: all 0.2s ease;
+    flex-shrink: 0;
 
     .resizer-inner {
         position: absolute;
@@ -151,7 +163,7 @@ body {
     }
 
     &:hover {
-        background: rgba(124, 58, 237, 0.1);
+        background: rgba(124, 58, 237, 0.06);
 
         .resizer-inner {
             background: var(--primary-color);
@@ -171,23 +183,29 @@ body {
     position: relative;
     justify-content: center;
     align-items: center;
+    background: var(--bg-light);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
     app-canvas-editor {
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+        box-shadow:
+            0 0 0 1px rgba(0, 0, 0, 0.04),
+            0 4px 24px rgba(0, 0, 0, 0.07),
+            0 16px 48px rgba(0, 0, 0, 0.05);
         max-width: 100%;
         max-height: 100%;
+        border-radius: 2px;
     }
 }
 
 /* ─── Template Info Banners ──────────────────────────────── */
 .template-info-banner {
     position: absolute;
-    top: 24px;
+    top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(30, 41, 59, 0.85);
-    backdrop-filter: blur(8px);
+    background: rgba(30, 41, 59, 0.88);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     color: white;
     padding: 10px 20px;
     border-radius: 30px;
@@ -244,6 +262,37 @@ body {
     }
 }
 
+/* ─── Global Loading Overlay ─────────────────────────────── */
+.global-loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.loader-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e2e8f0;
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.loader-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+}
+
 /* ─── Keyframes ──────────────────────────────────────────── */
 @keyframes slideInDown {
     from {
@@ -279,22 +328,38 @@ body {
     }
 }
 
-/* ════════════════════════════════════════════════════════
-   RESPONSIVE BREAKPOINTS
-   ════════════════════════════════════════════════════════ */
+@keyframes fadeInOverlay {
+    from {
+        opacity: 0;
+    }
 
-/* ─── Tablet & Mobile: < 1024px ─────────────────────────── */
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ════════════════════════════════════════════════════════════
+   TABLET + MOBILE  ≤ 1023px
+   Right sidebar becomes a bottom sheet, left nav disappears,
+   mobile toolbar takes over navigation.
+   ════════════════════════════════════════════════════════════ */
 @media (max-width: 1023px) {
+
     .main-layout {
         flex-direction: column;
         padding-bottom: var(--mobile-toolbar-height);
     }
 
     .center-content {
-        padding: 12px;
-        background: #f1f5f9;
-        height: auto;
         flex: 1;
+        height: 100%;
+        padding: 10px;
         overflow: hidden;
 
         app-canvas-editor {
@@ -303,70 +368,69 @@ body {
         }
     }
 
-    /* Mobile sidebar overlay (darkened backdrop) */
+    /* Backdrop overlay when bottom sheet is open */
     .mobile-sidebar-overlay {
         position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
+        inset: 0;
         background: rgba(15, 23, 42, 0.5);
         z-index: 1200;
         backdrop-filter: blur(4px);
         -webkit-backdrop-filter: blur(4px);
         animation: fadeInOverlay 0.25s ease;
+        cursor: pointer;
     }
 
-    /* Mobile Bottom Sheet (right sidebar) */
+    /* Bottom sheet — right sidebar panel */
     .mobile-bottom-sheet {
         position: fixed !important;
         bottom: var(--mobile-toolbar-height);
         left: 0;
         width: 100% !important;
-        height: 70vh !important;
-        max-height: 80vh !important;
+        height: 72vh !important;
+        max-height: 82vh !important;
         background: white;
         z-index: 1300;
         border-radius: 20px 20px 0 0;
-        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.2);
-        transform: translateY(100%);
+        box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
+        transform: translateY(110%);
         transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        display: none;
+        display: block;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 28px 16px 24px 16px;
+        padding: 30px 20px 24px;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #e2e8f0 transparent;
 
-        &.show {
-            display: block;
-            transform: translateY(0);
-            animation: mobileSlideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        // Drag handle bar
+        /* Drag handle */
         &::before {
             content: '';
             position: absolute;
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
-            width: 48px;
-            height: 5px;
-            background: #e2e8f0;
+            width: 44px;
+            height: 4px;
+            background: #cbd5e1;
             border-radius: 10px;
+        }
+
+        &.show {
+            transform: translateY(0);
+            animation: mobileSlideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
     }
 
     .template-info-banner {
-        top: 10px;
+        top: 8px;
         font-size: 11px;
-        padding: 8px 14px;
-        max-width: calc(100% - 24px);
+        padding: 7px 14px;
+        max-width: calc(100% - 20px);
     }
 
     .template-helper-action {
-        bottom: calc(var(--mobile-toolbar-height) + 12px);
+        bottom: calc(var(--mobile-toolbar-height) + 10px);
 
         .btn-helper {
             font-size: 12px;
@@ -375,23 +439,28 @@ body {
     }
 }
 
-/* ─── Small Tablet: 480–767px ────────────────────────────── */
+/* ════════════════════════════════════════════════════════════
+   PHONES  ≤ 767px
+   ════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
+
     .center-content {
         padding: 8px;
+        background: #e2e8f0;
     }
 
     .mobile-bottom-sheet {
         height: 68vh !important;
-        max-height: 80vh !important;
-        padding: 28px 12px 20px 12px;
+        padding: 28px 16px 20px;
     }
 }
 
-/* ─── Phones: < 480px ────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════
+   SMALL PHONES  ≤ 479px
+   ════════════════════════════════════════════════════════════ */
 @media (max-width: 479px) {
     :root {
-        --mobile-toolbar-height: 68px;
+        --mobile-toolbar-height: 66px;
     }
 
     .center-content {
@@ -403,9 +472,9 @@ body {
     }
 
     .mobile-bottom-sheet {
-        height: 72vh !important;
-        max-height: 85vh !important;
-        padding: 28px 10px 16px 10px;
+        height: 74vh !important;
+        max-height: 86vh !important;
+        padding: 26px 12px 16px;
         bottom: var(--mobile-toolbar-height);
     }
 
@@ -417,21 +486,29 @@ body {
             font-size: 15px;
         }
     }
+
+    .template-helper-action .btn-helper {
+        font-size: 11px;
+        padding: 7px 14px;
+        gap: 7px;
+    }
 }
 
-/* ─── Very small phones: < 360px ────────────────────────── */
+/* ════════════════════════════════════════════════════════════
+   VERY SMALL PHONES  ≤ 359px
+   ════════════════════════════════════════════════════════════ */
 @media (max-width: 359px) {
+    :root {
+        --mobile-toolbar-height: 62px;
+    }
+
     .center-content {
         padding: 4px;
     }
-}
 
-@keyframes fadeInOverlay {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
+    .mobile-bottom-sheet {
+        height: 76vh !important;
+        max-height: 88vh !important;
+        padding: 24px 10px 12px;
     }
 }
