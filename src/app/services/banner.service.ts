@@ -1767,25 +1767,35 @@ export class BannerService {
                 localUserItems = localUserVerified;
             }
 
-            // 1. PHASE 1: Load EVERYTHING Local (Responsive Baseline)
-            // Fetch bundled assets simultaneously with local user items
-            const bundledAssets = await this.bannerCloudService.getBundledTemplates();
+            // 1. PHASE 1: Load Local User Items (INSTANT - NO AWAIT)
             localUserItems.forEach(t => t.isCustom = true);
+            this.distributeToSignals(localUserItems);
 
-            // Initial render: Assets + Local User
-            this.distributeToSignals([...bundledAssets, ...localUserItems]);
-
-            // Release loader - the UI is now usable with baseline content
+            // Release loader immediately - user can start working with their own designs
             this.isProjectLoading.set(false);
 
-            // 2. PHASE 2: Background Cloud Sync (Silent Extension)
+            // 2. PHASE 2: Load Bundled & Cloud Content (Silent Background)
             (async () => {
                 try {
-                    // Fetch real-time updates from Firebase
-                    const [cloudSystem, cloudUser] = await Promise.all([
-                        this.bannerCloudService.getCloudSystemTemplates(),
-                        this.bannerCloudService.getUserDesigns()
-                    ]);
+                    // Start both fetches
+                    const bundledPromise = this.bannerCloudService.getBundledTemplates();
+                    const cloudFetchPromise = (async () => {
+                        const [cloudSystem, cloudUser] = await Promise.all([
+                            this.bannerCloudService.getCloudSystemTemplates(),
+                            this.bannerCloudService.getUserDesigns()
+                        ]);
+                        return { cloudSystem, cloudUser };
+                    })();
+
+                    // Wait for bundled assets first (usually fastest)
+                    const bundledAssets = await bundledPromise;
+                    if (bundledAssets.length > 0) {
+                        this.distributeToSignals([...bundledAssets, ...localUserItems]);
+                        console.log(`[Library] Bundled assets injected: ${bundledAssets.length}`);
+                    }
+
+                    // Then wait for cloud results
+                    const { cloudSystem, cloudUser } = await cloudFetchPromise;
 
                     // 3. PHASE 3: Intelligent Merge
                     const userMap = new Map<string, Template>();
@@ -1806,8 +1816,8 @@ export class BannerService {
 
                     // C. Merge with System Content (Cloud System > Bundled Assets)
                     const systemMap = new Map<string, Template>();
-                    bundledAssets.forEach(t => systemMap.set(t.id, t));
-                    cloudSystem.forEach(t => systemMap.set(t.id, t));
+                    bundledAssets.forEach((t: Template) => systemMap.set(t.id, t));
+                    cloudSystem.forEach((t: Template) => systemMap.set(t.id, t));
 
                     const finalUserList = Array.from(userMap.values());
                     const finalSystemList = Array.from(systemMap.values());

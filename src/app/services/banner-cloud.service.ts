@@ -50,21 +50,25 @@ export class BannerCloudService {
      * This is used for Phase 1 (instant load).
      */
     async getBundledTemplates(): Promise<Template[]> {
+        // We use relative path for maximum portability across local & Vercel
+        const assetPath = 'assets/templates/system_templates.json';
         try {
-            const response = await fetch('/assets/templates/system_templates.json');
-            if (response.ok) {
-                const data = await response.json();
-                if (Array.isArray(data)) {
-                    return data.map(t => ({
-                        ...t,
-                        isSystem: true,
-                        isCustom: false,
-                        date: t.date ? new Date(t.date) : new Date(2024, 0, 1) // Baseline date
-                    }));
-                }
+            const response = await fetch(assetPath);
+            if (!response.ok) {
+                console.warn(`[Cloud] Assets file not found at ${assetPath} (Status ${response.status})`);
+                return [];
+            }
+            const data = await response.json();
+            if (Array.isArray(data)) {
+                return data.map(t => ({
+                    ...t,
+                    isSystem: true,
+                    isCustom: false,
+                    date: t.date ? new Date(t.date) : new Date(2024, 0, 1)
+                }));
             }
         } catch (e) {
-            console.warn('[Cloud] No bundled assets found.');
+            console.error('[Cloud] Failed to parse bundled assets JSON:', e);
         }
         return [];
     }
