@@ -1707,13 +1707,18 @@ export class BannerService {
     async deleteTemplate(templateId: string): Promise<void> {
         const allSaved = await this.imageStorage.getTemplates();
         const updated = allSaved.filter(t => t.id !== templateId);
+
         if (await this.saveTemplatesToStorage(updated)) {
-            // Cloud Delete
+            // Background cleanup of actual design data and cloud
             try {
-                await this.bannerCloudService.deleteDesignFromCloud(templateId);
-            } catch (cloudErr) {
-                console.warn('Cloud sync deletion failed', cloudErr);
+                await Promise.allSettled([
+                    this.persistenceService.deleteDesign(templateId),
+                    this.bannerCloudService.deleteDesignFromCloud(templateId)
+                ]);
+            } catch (err) {
+                console.warn('[Cleanup] Minor failure during background deletion', err);
             }
+
             await this.initSavedTemplates();
         }
     }
@@ -1742,8 +1747,42 @@ export class BannerService {
         console.log('[Library] Initializing...');
 
         try {
+            // Auto-deletion logic for old templates (older than 10 days)
+            const tenDaysAgo = new Date();
+            tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
+            let localTemplates = await this.imageStorage.getTemplates() || [];
+            const templatesToDelete: Template[] = [];
+            const templatesToKeep: Template[] = [];
+
+            for (const tpl of localTemplates) {
+                // Only auto-delete custom templates that have a date and are older than 10 days
+                if (tpl.isCustom && tpl.date && new Date(tpl.date) < tenDaysAgo) {
+                    templatesToDelete.push(tpl);
+                } else {
+                    templatesToKeep.push(tpl);
+                }
+            }
+
+            // If there are templates to delete, perform the deletion
+            if (templatesToDelete.length > 0) {
+                console.log(`[Library] Deleting ${templatesToDelete.length} expired custom templates.`);
+                await Promise.all(templatesToDelete.map(async (tpl) => {
+                    try {
+                        await this.persistenceService.deleteDesign(tpl.id);
+                        await this.bannerCloudService.deleteDesignFromCloud(tpl.id); // Attempt cloud delete
+                    } catch (err) {
+                        console.warn(`[Library] Failed to delete data for expired template ${tpl.id}:`, err);
+                    }
+                }));
+                // Update local storage with only the templates to keep
+                await this.imageStorage.saveTemplates(templatesToKeep);
+                localTemplates = templatesToKeep; // Update localTemplates for subsequent steps
+            }
+
+
             // 1. PHASE 1: Load Local Data (High Priority)
-            const localTemplates = await this.imageStorage.getTemplates() || [];
+            // localTemplates is already updated if deletions occurred
             localTemplates.forEach(t => t.isCustom = true);
 
             // Show local items IMMEDIATELY
@@ -2041,28 +2080,46 @@ export class BannerService {
     }
 
     async removeBackground(): Promise<void> {
-        const activeObject = this.canvas.getActiveObject();
-        if (!activeObject || activeObject.type !== 'image') {
-            this.notificationService.warning('Please select an image first');
-            return;
-        }
-
-        const originalImg = activeObject as fabric.Image;
-        const imgElement = (originalImg as any)._element || (originalImg as any).getElement?.();
-        const originalSrc = (originalImg as any).src || (originalImg as fabric.Image).getSrc() || (originalImg as any).originalSrc;
-
-        if (!originalSrc && !imgElement) {
-            this.notificationService.error('Could not identify image source');
-            return;
-        }
-
-        // Assign a temporary ID if missing
-        if (!(originalImg as any).id) {
-            (originalImg as any).id = 'img_' + Math.random().toString(36).substr(2, 9);
-        }
-        const currentId = (originalImg as any).id;
+        let resultUrl: string | null = null; // Declare resultUrl here for wider scope
 
         try {
+            const activeObject = this.canvas.getActiveObject();
+            if (!activeObject || activeObject.type !== 'image') {
+                this.notificationService.warning('Please select an image first.');
+                return;
+            }
+
+            const originalImg = activeObject as fabric.Image;
+            const currentId = (originalImg as any).id || 'img_' + Math.random().toString(36).substr(2, 9);
+            (originalImg as any).id = currentId; // Ensure the image has an ID
+
+            // Attempt to get the image source in order of preference
+            let inputSource: any = null;
+            const imgEl = originalImg.getElement();
+
+            // 1. Prefer the element source URL if available
+            if (imgEl && imgEl instanceof HTMLImageElement && imgEl.src && !imgEl.src.startsWith('blob:')) {
+                inputSource = imgEl.src;
+            }
+
+            // 2. Fallback to various properties
+            if (!inputSource) {
+                const src = (originalImg as any).src || originalImg.getSrc() || (originalImg as any).originalSrc;
+                if (src) {
+                    inputSource = await this.restoreUrl(src);
+                }
+            }
+
+            // 3. Last fallback: use the element itself if nothing else worked
+            if (!inputSource && imgEl instanceof HTMLImageElement) {
+                inputSource = imgEl;
+            }
+
+            if (!inputSource) {
+                this.notificationService.error('Could not identify a valid image source for background removal.');
+                return;
+            }
+
             this.isRemovingBg.set(true);
             this.processingObjectId.set(currentId);
             this.bgRemovalProgress.set(0);
@@ -2070,9 +2127,36 @@ export class BannerService {
 
             if (!this.rbFunctionCache) {
                 const imglyModule = await import('@imgly/background-removal');
+                // Support both default and named exports
                 this.rbFunctionCache = imglyModule.removeBackground || (imglyModule as any).default?.removeBackground || (imglyModule as any).default;
             }
             const rbFunction = this.rbFunctionCache;
+
+            if (typeof rbFunction !== 'function') {
+                this.notificationService.error('Background removal library failed to provide a valid processing function.');
+                return;
+            }
+
+            // Preserve original image geometry and properties
+            const geometry = {
+                left: originalImg.left,
+                top: originalImg.top,
+                width: originalImg.width,
+                height: originalImg.height,
+                scaleX: originalImg.scaleX,
+                scaleY: originalImg.scaleY,
+                angle: originalImg.angle,
+                flipX: originalImg.flipX,
+                flipY: originalImg.flipY,
+                skewX: originalImg.skewX,
+                skewY: originalImg.skewY,
+                originX: originalImg.originX,
+                originY: originalImg.originY,
+                cropX: originalImg.cropX,
+                cropY: originalImg.cropY,
+                opacity: originalImg.opacity,
+                // Add any other properties you want to preserve
+            };
 
             const config: any = {
                 progress: (key: string, current: number, total: number) => {
@@ -2082,81 +2166,86 @@ export class BannerService {
                     if (key.includes('fetch')) {
                         this.bgRemovalStatus.set(`Downloading Model... ${percent}%`);
                     } else if (key.includes('compute')) {
-                        this.bgRemovalStatus.set(`Processing AI... ${percent}%`);
-                    } else {
                         this.bgRemovalStatus.set(`Refining... ${percent}%`);
                     }
                 },
-                model: 'isnet', // Optimized standard model
-                output: {
-                    format: 'image/png',
-                    quality: 0.6 // Lower bitstream quality for faster processing
-                },
-                proxyToWorker: true,
-                device: 'webgl' // Favor WebGL acceleration
+                model: 'isnet_fp16',
+                publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
+                proxyToWorker: false
             };
 
-            const resultBlob = await rbFunction(originalSrc || imgElement, config);
-            const resultUrl = URL.createObjectURL(resultBlob);
+            const resultBlob = await rbFunction(inputSource, config);
+            resultUrl = URL.createObjectURL(resultBlob);
 
-            const imgObj = new Image();
-            imgObj.src = resultUrl;
-
-            imgObj.onload = async () => {
-                const newImg = new fabric.Image(imgObj);
-
-                // Preserve ALL geometric state including crops
-                const geometry = {
-                    left: originalImg.left,
-                    top: originalImg.top,
-                    width: originalImg.width,
-                    height: originalImg.height,
-                    scaleX: originalImg.scaleX,
-                    scaleY: originalImg.scaleY,
-                    angle: originalImg.angle,
-                    flipX: originalImg.flipX,
-                    flipY: originalImg.flipY,
-                    skewX: originalImg.skewX,
-                    skewY: originalImg.skewY,
-                    originX: originalImg.originX,
-                    originY: originalImg.originY,
-                    cropX: originalImg.cropX,
-                    cropY: originalImg.cropY,
-                    opacity: originalImg.opacity
+            const newImg = await new Promise<fabric.Image>((resolve, reject) => {
+                const imgObj = new Image();
+                imgObj.src = resultUrl!;
+                imgObj.onload = () => {
+                    const newFabricImage = new fabric.Image(imgObj, {
+                        ...geometry, // Apply preserved geometry
+                        // Ensure these are set after geometry to override if needed
+                        left: originalImg.left,
+                        top: originalImg.top,
+                        scaleX: originalImg.scaleX,
+                        scaleY: originalImg.scaleY,
+                        angle: originalImg.angle,
+                        flipX: originalImg.flipX,
+                        flipY: originalImg.flipY,
+                        skewX: originalImg.skewX,
+                        skewY: originalImg.skewY,
+                        originX: originalImg.originX,
+                        originY: originalImg.originY,
+                        cropX: originalImg.cropX,
+                        cropY: originalImg.cropY,
+                        opacity: originalImg.opacity,
+                    });
+                    resolve(newFabricImage);
                 };
+                imgObj.onerror = (err: Event | string) => {
+                    reject(new Error('Failed to load processed image: ' + (typeof err === 'string' ? err : err.type)));
+                };
+            });
 
-                const persistentSrc = (originalImg as any).idbId ? `indexeddb://${(originalImg as any).idbId}` : originalSrc;
-                (newImg as any).originalSrc = persistentSrc;
-                (newImg as any).isBgRemoved = true;
-                (newImg as any).id = currentId;
+            // Determine the persistent source for the new image
+            const originalSrc = (originalImg as any).src || originalImg.getSrc() || (originalImg as any).originalSrc;
+            const persistentSrc = (originalImg as any).idbId ? `indexeddb://${(originalImg as any).idbId}` : originalSrc;
 
-                const index = this.canvas.getObjects().indexOf(originalImg);
-                if (index !== -1) {
-                    this.canvas.remove(originalImg);
-                    this.canvas.add(newImg);
-                    this.canvas.moveObjectTo(newImg, index);
-                    this.canvas.setActiveObject(newImg);
-                    newImg.set(geometry);
-                    newImg.setCoords();
-                    this.canvas.renderAll();
-                }
+            (newImg as any).originalSrc = persistentSrc;
+            (newImg as any).isBgRemoved = true;
+            (newImg as any).id = currentId;
 
-                const cutoutId = await this.saveAsCutout(resultBlob, 'AI Cutout ' + new Date().toLocaleTimeString());
-                (newImg as any).idbId = cutoutId;
+            const index = this.canvas.getObjects().indexOf(originalImg);
+            if (index !== -1) {
+                this.canvas.remove(originalImg);
+                this.canvas.add(newImg);
+                this.canvas.moveObjectTo(newImg, index);
+                this.canvas.setActiveObject(newImg);
+                newImg.setCoords(); // Update coordinates after setting properties
+                this.canvas.renderAll();
+            } else {
+                // Fallback if originalImg was not found (e.g., removed by another action)
+                this.canvas.add(newImg);
+                this.canvas.setActiveObject(newImg);
+                newImg.setCoords(); // Update coordinates after setting properties
+                this.canvas.renderAll();
+            }
 
-                this.isRemovingBg.set(false);
-                this.processingObjectId.set(null);
-                this.saveState();
-                this.activeBlobUrls.push(resultUrl);
-                this.triggerSelectedUpdate();
-                this.notificationService.success('Background Removed!');
-            };
+            const cutoutId = await this.saveAsCutout(resultBlob, 'AI Cutout ' + new Date().toLocaleTimeString());
+            (newImg as any).idbId = cutoutId;
+
+            this.notificationService.success('Background Removed!');
 
         } catch (error: any) {
-            console.error('Optimized Removal Error:', error);
-            this.notificationService.error('AI Error: ' + (error.message || 'Processing failed'));
+            console.error('Background Removal Error:', error);
+            this.notificationService.error('AI Error: ' + (error.message || 'Processing failed.'));
+        } finally {
             this.isRemovingBg.set(false);
             this.processingObjectId.set(null);
+            this.saveState();
+            if (resultUrl) {
+                this.activeBlobUrls.push(resultUrl); // Add to activeBlobUrls for cleanup
+            }
+            this.triggerSelectedUpdate();
         }
     }
 

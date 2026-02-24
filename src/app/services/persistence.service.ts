@@ -109,6 +109,22 @@ export class PersistenceService {
     }
 
     /**
+     * Deletes a design from the persistence store.
+     * @param id Unique identifier for the design to delete
+     */
+    async deleteDesign(id: string): Promise<void> {
+        const db = await this.dbPromise;
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['designs'], 'readwrite');
+            const store = transaction.objectStore('designs');
+            const request = store.delete(id);
+
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    /**
      * Loads a Fabric.js canvas design and applies it to the canvas.
      * @param id Unique identifier for the design
      * @param canvas Fabric.js canvas instance

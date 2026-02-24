@@ -1,7 +1,7 @@
 import { Component, AfterViewInit, inject, HostListener, ChangeDetectionStrategy } from '@angular/core';
 import { BannerService } from '../services/banner.service';
 import { CommonModule } from '@angular/common';
-import * as fabric from 'fabric';
+
 
 @Component({
   selector: 'app-canvas-editor',
