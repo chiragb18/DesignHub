@@ -32,7 +32,7 @@ export class TemplatesPanel {
     gradients = [
         { css: 'linear-gradient(to right, #ff7e5f, #feb47b)', c1: '#ff7e5f', c2: '#feb47b' },
         { css: 'linear-gradient(to right, #4facfe, #00f2fe)', c1: '#4facfe', c2: '#00f2fe' },
-        { css: 'linear-gradient(to right, #43e97b, #38f9d7)', c1: '#43e97b', c2: '#38f9d7' },
+        { css: 'linear-gradient(to right, #43e97b, #6b38f9ff)', c1: '#43e97b', c2: '#38f9d7' },
         { css: 'linear-gradient(to right, #fa709a, #fee140)', c1: '#fa709a', c2: '#fee140' },
         { css: 'linear-gradient(to right, #667eea, #764ba2)', c1: '#667eea', c2: '#764ba2' },
         { css: 'linear-gradient(to right, #89f7fe, #66a6ff)', c1: '#89f7fe', c2: '#66a6ff' },

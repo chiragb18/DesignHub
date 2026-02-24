@@ -143,14 +143,6 @@ export class BannerService {
         this.debouncedSave = this.debounce(this.saveState.bind(this), 300);
         this.debouncedResize = this.debounce(this.handleResize.bind(this), 100);
         this.debouncedRefresh = this.debounce(this.refreshState.bind(this), 50);
-
-        // Auto-initialize if canvas is already present or on next tick
-        setTimeout(() => {
-            if (!this.savedTemplates().length) {
-                this.initSavedTemplates();
-                this.initSavedProjects();
-            }
-        }, 1000);
     }
 
     // ... (InitCanvas and other methods remain) ...
@@ -1747,106 +1739,96 @@ export class BannerService {
         console.log('[Library] Initializing...');
 
         try {
-            // Auto-deletion logic for old templates (older than 10 days)
-            const tenDaysAgo = new Date();
-            tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+            // Auto-deletion logic (Expanded to 30 days for safety)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-            let localTemplates = await this.imageStorage.getTemplates() || [];
-            const templatesToDelete: Template[] = [];
-            const templatesToKeep: Template[] = [];
+            let localUserItems = await this.imageStorage.getTemplates() || [];
+            const itemsToDelete: Template[] = [];
+            const localUserVerified: Template[] = [];
 
-            for (const tpl of localTemplates) {
-                // Only auto-delete custom templates that have a date and are older than 10 days
-                if (tpl.isCustom && tpl.date && new Date(tpl.date) < tenDaysAgo) {
-                    templatesToDelete.push(tpl);
+            for (const tpl of localUserItems) {
+                if (tpl.isCustom && tpl.date && new Date(tpl.date) < thirtyDaysAgo) {
+                    itemsToDelete.push(tpl);
                 } else {
-                    templatesToKeep.push(tpl);
+                    localUserVerified.push(tpl);
                 }
             }
 
-            // If there are templates to delete, perform the deletion
-            if (templatesToDelete.length > 0) {
-                console.log(`[Library] Deleting ${templatesToDelete.length} expired custom templates.`);
-                await Promise.all(templatesToDelete.map(async (tpl) => {
+            if (itemsToDelete.length > 0) {
+                console.log(`[Library] Cleanup: ${itemsToDelete.length} very old custom templates.`);
+                await Promise.all(itemsToDelete.map(async (tpl) => {
                     try {
                         await this.persistenceService.deleteDesign(tpl.id);
-                        await this.bannerCloudService.deleteDesignFromCloud(tpl.id); // Attempt cloud delete
-                    } catch (err) {
-                        console.warn(`[Library] Failed to delete data for expired template ${tpl.id}:`, err);
-                    }
+                        await this.bannerCloudService.deleteDesignFromCloud(tpl.id);
+                    } catch (err) { }
                 }));
-                // Update local storage with only the templates to keep
-                await this.imageStorage.saveTemplates(templatesToKeep);
-                localTemplates = templatesToKeep; // Update localTemplates for subsequent steps
+                await this.imageStorage.saveTemplates(localUserVerified);
+                localUserItems = localUserVerified;
             }
 
+            // 1. PHASE 1: Load EVERYTHING Local (Responsive Baseline)
+            // Fetch bundled assets simultaneously with local user items
+            const bundledAssets = await this.bannerCloudService.getBundledTemplates();
+            localUserItems.forEach(t => t.isCustom = true);
 
-            // 1. PHASE 1: Load Local Data (High Priority)
-            // localTemplates is already updated if deletions occurred
-            localTemplates.forEach(t => t.isCustom = true);
+            // Initial render: Assets + Local User
+            this.distributeToSignals([...bundledAssets, ...localUserItems]);
 
-            // Show local items IMMEDIATELY
-            this.distributeToSignals(localTemplates);
+            // Release loader - the UI is now usable with baseline content
+            this.isProjectLoading.set(false);
 
-            // Set loading to false early if we have local data, 
-            // so the user isn't stuck behind a spinner if cloud is slow.
-            if (localTemplates.length > 0) {
-                this.isProjectLoading.set(false);
-            }
+            // 2. PHASE 2: Background Cloud Sync (Silent Extension)
+            (async () => {
+                try {
+                    // Fetch real-time updates from Firebase
+                    const [cloudSystem, cloudUser] = await Promise.all([
+                        this.bannerCloudService.getCloudSystemTemplates(),
+                        this.bannerCloudService.getUserDesigns()
+                    ]);
 
-            // 2. PHASE 2: Background Cloud Fetch
-            let systemTemplates: Template[] = [];
-            let cloudUserDesigns: Template[] = [];
+                    // 3. PHASE 3: Intelligent Merge
+                    const userMap = new Map<string, Template>();
 
-            try {
-                // Add a reasonable timeout for cloud fetch (5 seconds)
-                const cloudPromise = Promise.all([
-                    this.bannerCloudService.getSystemTemplates(),
-                    this.bannerCloudService.getUserDesigns()
-                ]);
+                    // A. Start with Cloud User Data
+                    cloudUser.forEach((t: Template) => {
+                        t.isCustom = true;
+                        userMap.set(t.id, t);
+                    });
 
-                const [sys, user] = await cloudPromise;
-                systemTemplates = sys || [];
-                cloudUserDesigns = user || [];
-            } catch (cloudErr) {
-                console.warn('[Library] Cloud sync background failed.', cloudErr);
-            }
+                    // B. Layer Local User Data (Preference for local if newer or unique)
+                    localUserItems.forEach((t: Template) => {
+                        const existing = userMap.get(t.id);
+                        if (!existing || this.isNewer(t, existing)) {
+                            userMap.set(t.id, t);
+                        }
+                    });
 
-            // 3. PHASE 3: Merge & Final Sort
-            const userMap = new Map<string, Template>();
+                    // C. Merge with System Content (Cloud System > Bundled Assets)
+                    const systemMap = new Map<string, Template>();
+                    bundledAssets.forEach(t => systemMap.set(t.id, t));
+                    cloudSystem.forEach(t => systemMap.set(t.id, t));
 
-            // Cloud data baseline
-            cloudUserDesigns.forEach(t => {
-                t.isCustom = true;
-                userMap.set(t.id, t);
-            });
+                    const finalUserList = Array.from(userMap.values());
+                    const finalSystemList = Array.from(systemMap.values());
+                    const allFinalItems = [...finalSystemList, ...finalUserList];
 
-            // Local data preference
-            localTemplates.forEach(t => {
-                const existing = userMap.get(t.id);
-                // Simple date-based merge or existence check
-                if (!existing || this.isNewer(t, existing)) {
-                    userMap.set(t.id, t);
+                    // 4. Sort (Newest First)
+                    allFinalItems.sort((a, b) => this.getSafeTime(b) - this.getSafeTime(a));
+
+                    // 5. Final distribution to signals
+                    this.distributeToSignals(allFinalItems);
+                    console.log(`✅ Library Synced: ${allFinalItems.length} total items (${finalSystemList.length} system, ${finalUserList.length} user).`);
+
+                } catch (e) {
+                    console.warn('[Library] Background sync partial failed', e);
+                } finally {
+                    this.isProjectLoading.set(false);
                 }
-            });
-
-            const mergedUserTemplates = Array.from(userMap.values());
-            const allItems = [...systemTemplates, ...mergedUserTemplates];
-
-            // 4. Safe Sort (Newest first)
-            allItems.sort((a, b) => {
-                const timeB = this.getSafeTime(b);
-                const timeA = this.getSafeTime(a);
-                return timeB - timeA;
-            });
-
-            // 5. Final Distribution
-            this.distributeToSignals(allItems);
-            console.log(`✅ Library Sync Result: ${allItems.length} total items.`);
+            })();
 
         } catch (e) {
             console.error('❌ Template system failure', e);
-        } finally {
             this.isProjectLoading.set(false);
         }
     }
@@ -2055,25 +2037,26 @@ export class BannerService {
             this.cutouts.set(localCutouts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
             console.log(`[Library] 1. Local cutouts loaded: ${localCutouts.length}`);
 
-            // 2. PHASE 2: Load Cloud Cutouts
-            let cloudCutouts: any[] = [];
-            try {
-                cloudCutouts = await this.bannerCloudService.getCloudCutouts() || [];
-                console.log(`[Library] 2. Cloud cutouts loaded: ${cloudCutouts.length}`);
+            // 2. PHASE 2: Load Cloud Cutouts (Background)
+            (async () => {
+                try {
+                    const cloudCutouts = await this.bannerCloudService.getCloudCutouts() || [];
+                    console.log(`[Library] 2. Cloud cutouts loaded: ${cloudCutouts.length}`);
 
-                // 3. PHASE 3: Merge Strategy
-                const cutoutMap = new Map<string, any>();
-                cloudCutouts.forEach(c => cutoutMap.set(c.id, c));
-                localCutouts.forEach(c => cutoutMap.set(c.id, c)); // Local preference
+                    // 3. PHASE 3: Merge Strategy
+                    const cutoutMap = new Map<string, any>();
+                    cloudCutouts.forEach(c => cutoutMap.set(c.id, c));
+                    localCutouts.forEach(c => cutoutMap.set(c.id, c)); // Local preference
 
-                const merged = Array.from(cutoutMap.values())
-                    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                    const merged = Array.from(cutoutMap.values())
+                        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-                this.cutouts.set(merged);
-                console.log(`✅ Cutouts Sync Complete: ${merged.length} Total.`);
-            } catch (cloudErr) {
-                console.warn('Cloud cutouts sync failed', cloudErr);
-            }
+                    this.cutouts.set(merged);
+                    console.log(`✅ Cutouts Sync Complete: ${merged.length} Total.`);
+                } catch (cloudErr) {
+                    console.warn('Cloud cutouts sync failed', cloudErr);
+                }
+            })();
         } catch (e) {
             console.error('Failed to load cutouts', e);
         }
@@ -4138,22 +4121,24 @@ export class BannerService {
             console.log(`[Projects] 1. Local projects loaded: ${local.length}`);
 
             // 2. PHASE 2: Fetch Cloud Projects (Background)
-            try {
-                const cloud = await this.bannerCloudService.getCloudProjects() || [];
+            (async () => {
+                try {
+                    const cloud = await this.bannerCloudService.getCloudProjects() || [];
 
-                // 3. PHASE 3: Merge
-                const projectMap = new Map<string, any>();
-                cloud.forEach(p => projectMap.set(p.id, p));
-                local.forEach(p => projectMap.set(p.id, p)); // Preference for local
+                    // 3. PHASE 3: Merge
+                    const projectMap = new Map<string, any>();
+                    cloud.forEach(p => projectMap.set(p.id, p));
+                    local.forEach(p => projectMap.set(p.id, p)); // Preference for local
 
-                const merged = Array.from(projectMap.values())
-                    .sort((a, b) => (b.date || 0) - (a.date || 0));
+                    const merged = Array.from(projectMap.values())
+                        .sort((a, b) => (b.date || 0) - (a.date || 0));
 
-                this.savedProjects.set(merged);
-                console.log(`✅ Projects Sync OK: ${merged.length} found.`);
-            } catch (cloudErr) {
-                console.warn('Projects background sync skipped', cloudErr);
-            }
+                    this.savedProjects.set(merged);
+                    console.log(`✅ Projects Sync OK: ${merged.length} found.`);
+                } catch (cloudErr) {
+                    console.warn('Projects background sync skipped', cloudErr);
+                }
+            })();
         } catch (e) {
             console.warn('Failed to load projects listing', e);
         }

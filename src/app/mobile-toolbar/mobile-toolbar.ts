@@ -10,9 +10,9 @@ import { BannerService } from '../services/banner.service';
   template: `
     <div class="mobile-toolbar-wrapper">
       <div class="mobile-toolbar">
-        <button [class.active]="bannerService.activeTab() === 'templates'" (click)="setTab('templates')">
+        <button [class.active]="bannerService.activeTab() === 'templates'" (click)="setTab('templates')" class="highlight-btn">
           <span class="material-symbols-outlined">grid_view</span>
-          <label>Templates</label>
+          <label>Library</label>
         </button>
         <button [class.active]="bannerService.activeTab() === 'text'" (click)="setTab('text')">
           <span class="material-symbols-outlined">title</span>
@@ -57,7 +57,8 @@ import { BannerService } from '../services/banner.service';
       width: 100%;
       background: #ffffff;
       box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
-      z-index: 1000;
+      z-index: 1500;
+
       /* Respect iPhone home indicator / safe area */
       padding-bottom: env(safe-area-inset-bottom, 0px);
       border-top: 1px solid #f1f5f9;
@@ -110,6 +111,14 @@ import { BannerService } from '../services/banner.service';
       background: #ede9fe;
       border-color: #ddd6fe;
       box-shadow: 0 4px 12px rgba(124, 58, 237, 0.1);
+
+      &.highlight-btn {
+        background: #fdf2f8 !important;
+        color: #db2777 !important;
+        border-color: #fce7f3 !important;
+        box-shadow: 0 4px 10px rgba(219, 39, 119, 0.15);
+      }
+
       
       .material-symbols-outlined {
         font-variation-settings: 'FILL' 1;

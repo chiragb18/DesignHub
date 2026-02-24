@@ -1,4 +1,9 @@
 <aside class="sidebar-toolbox">
+    <!-- Mobile Handle - Click to close/toggle -->
+    <div class="mobile-handle" (click)="bannerService.activeTab.set('')" *ngIf="bannerService.isMobile()">
+        <div class="handle-bar"></div>
+    </div>
+
     <!-- Header with Dynamic Title -->
     <div class="sidebar-header">
         <div class="header-top">

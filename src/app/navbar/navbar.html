@@ -151,6 +151,10 @@
 
         <!-- Mobile More Menu -->
         <ng-container *ngIf="bannerService.isMobile()">
+            <button (click)="bannerService.activeTab.set('templates')" class="nav-tool-btn icon-only highlight-btn"
+                title="Library">
+                <span class="material-symbols-outlined">grid_view</span>
+            </button>
             <button (click)="undo()" class="nav-tool-btn icon-only" [disabled]="!bannerService.canUndo()">
                 <span class="material-symbols-outlined">undo</span>
             </button>

@@ -397,23 +397,35 @@ body {
         display: block;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 30px 20px 24px;
+        padding: 40px 20px 24px;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
         scrollbar-width: thin;
         scrollbar-color: #e2e8f0 transparent;
 
-        /* Drag handle */
-        &::before {
-            content: '';
+        .mobile-handle {
             position: absolute;
-            top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 44px;
-            height: 4px;
-            background: #cbd5e1;
-            border-radius: 10px;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+
+            .handle-bar {
+                width: 44px;
+                height: 5px;
+                background: #cbd5e1;
+                border-radius: 10px;
+                transition: background 0.2s;
+            }
+
+            &:active .handle-bar {
+                background: #94a3b8;
+            }
         }
 
         &.show {
