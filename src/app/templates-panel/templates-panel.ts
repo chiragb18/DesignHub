@@ -163,6 +163,12 @@ export class TemplatesPanel {
             }
         );
     }
+
+    exportItem(event: Event, template: Template) {
+        event.stopPropagation();
+        this.bannerService.exportTemplate(template);
+    }
+
     hasAnyData = computed(() => {
         return this.filteredTemplates().length > 0 ||
             this.filteredDesigns().length > 0 ||

@@ -378,8 +378,40 @@
                 }
             }
 
-            &:hover .card-delete-btn {
+            &:hover .card-delete-btn,
+            &:hover .card-export-btn {
                 opacity: 1;
+            }
+
+            .card-export-btn {
+                position: absolute;
+                bottom: 8px;
+                left: 8px;
+                width: 24px;
+                height: 24px;
+                border-radius: 6px;
+                background: rgba(255, 255, 255, 0.9);
+                color: #7c3aed;
+                border: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                opacity: 0;
+                transition: opacity 0.2s;
+
+                &.top-left {
+                    bottom: auto;
+                    top: 8px;
+                }
+
+                span {
+                    font-size: 16px;
+                }
+
+                &:hover {
+                    background: #7c3aed;
+                    color: white;
+                }
             }
 
             .item-name,

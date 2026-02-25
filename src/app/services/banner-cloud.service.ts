@@ -51,7 +51,7 @@ export class BannerCloudService {
      */
     async getBundledTemplates(): Promise<Template[]> {
         // We use relative path for maximum portability across local & Vercel
-        const assetPath = 'assets/templates/system_templates.json';
+        const assetPath = '/assets/templates/system_templates.json';
         try {
             const response = await fetch(assetPath);
             if (!response.ok) {

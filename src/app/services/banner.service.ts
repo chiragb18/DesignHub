@@ -1687,6 +1687,57 @@ export class BannerService {
         }
     }
 
+    /**
+     * EXPORT UTILITY
+     * Retrieves full JSON payload and triggers a .json file download.
+     * Use this to get data for src/assets/templates/system_templates.json
+     */
+    async exportTemplate(template: Template): Promise<void> {
+        try {
+            this.notificationService.info('Preparing export...');
+
+            let payload = template.json;
+            if (!payload || (!payload.objects && !payload.backgroundImage)) {
+                // Retrieve from shadow storage if not inline
+                payload = await this.persistenceService.getDesign(template.id);
+            }
+
+            if (!payload) {
+                // Last resort: if active design matches, use current canvas
+                if (this.activeTemplateId() === template.id) {
+                    payload = this.canvas.toObject(this.SERIALIZE_PROPS);
+                    (payload as any).width = this.canvas.width;
+                    (payload as any).height = this.canvas.height;
+                } else {
+                    throw new Error('Template payload not found in local or cloud storage.');
+                }
+            }
+
+            const exportData = {
+                ...template,
+                json: payload,
+                isSystem: true, // Mark as system for the destination file
+                isCustom: false,
+                date: new Date().toISOString()
+            };
+
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${template.name.replace(/\s+/g, '_')}_system_tpl.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            this.notificationService.success('Template exported! Add this to system_templates.json');
+        } catch (err) {
+            console.error('Export failed:', err);
+            this.notificationService.error('Export failed: ' + (err as Error).message);
+        }
+    }
+
     private async syncTemplateToCloud(template: Template, json: any) {
         try {
             await this.bannerCloudService.saveTemplateToCloud(template, json);
