@@ -1,32 +1,3 @@
 [
-    {
-        "id": "sys_tpl_1",
-        "name": "Professional Startup Banner",
-        "category": "Template",
-        "thumbnail": "https://images.unsplash.com/photo-1557683316-973673baf926?q=80&w=2629&auto=format&fit=crop",
-        "json": "{\"objects\":[{\"type\":\"rect\",\"left\":0,\"top\":0,\"width\":1200,\"height\":675,\"fill\":\"#1e293b\"},{\"type\":\"i-text\",\"left\":100,\"top\":200,\"text\":\"LAUNCH YOUR\\nAMBITION\",\"fill\":\"#ffffff\",\"fontSize\":100,\"fontWeight\":\"bold\",\"lineHeight\":1.1},{\"type\":\"i-text\",\"left\":100,\"top\":450,\"text\":\"Transform your vision into reality with our premium suite tools.\",\"fill\":\"#94a3b8\",\"fontSize\":32}]}",
-        "isSystem": true,
-        "isCustom": false,
-        "date": "2026-02-23T10:00:00Z"
-    },
-    {
-        "id": "sys_tpl_2",
-        "name": "Social Media Viral Design",
-        "category": "Design",
-        "thumbnail": "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=2574&auto=format&fit=crop",
-        "json": "{\"objects\":[{\"type\":\"rect\",\"left\":0,\"top\":0,\"width\":1200,\"height\":675,\"fill\":\"#f43f5e\"},{\"type\":\"circle\",\"left\":800,\"top\":337,\"radius\":250,\"fill\":\"#fb7185\"},{\"type\":\"i-text\",\"left\":100,\"top\":250,\"text\":\"GO VIRAL\\nTODAY\",\"fill\":\"white\",\"fontSize\":120,\"fontWeight\":\"900\"}]}",
-        "isSystem": true,
-        "isCustom": false,
-        "date": "2026-02-23T11:00:00Z"
-    },
-    {
-        "id": "sys_tpl_3",
-        "name": "Modern Background",
-        "category": "Background",
-        "thumbnail": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop",
-        "json": "{\"objects\":[{\"type\":\"rect\",\"left\":0,\"top\":0,\"width\":1200,\"height\":675,\"fill\":\"linear-gradient(to bottom right, #8b5cf6, #3b82f6)\"}]}",
-        "isSystem": true,
-        "isCustom": false,
-        "date": "2026-02-23T12:00:00Z"
-    }
+  
 ]
