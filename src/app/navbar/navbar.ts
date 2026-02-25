@@ -209,15 +209,7 @@ export class NavbarComponent {
     });
   }
 
-  /**
-   * Export all saved templates/designs/backgrounds as a portable JSON file.
-   * That file can be placed in src/assets/templates/system_templates.json and redeployed
-   * so every new visitor sees the items automatically.
-   */
-  async exportLibrary() {
-    this.closeMenus();
-    await this.bannerService.exportLibraryToJSON();
-  }
+
 
   toggleLanguage(lang: 'en' | 'mr') {
     this.bannerService.typingLanguage.set(lang);

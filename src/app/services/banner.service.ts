@@ -98,6 +98,8 @@ export class BannerService {
     private cropOverlay: fabric.Rect | null = null;
     private cropTarget: fabric.Image | null = null;
     private highlightOutline: fabric.Rect | null = null;
+    private deletedItemIds = new Set<string>();
+
 
     // Track blob URLs to prevent memory leaks
     private activeBlobUrls: string[] = [];
@@ -1692,51 +1694,7 @@ export class BannerService {
      * Retrieves full JSON payload and triggers a .json file download.
      * Use this to get data for src/assets/templates/system_templates.json
      */
-    async exportTemplate(template: Template): Promise<void> {
-        try {
-            this.notificationService.info('Preparing export...');
 
-            let payload = template.json;
-            if (!payload || (!payload.objects && !payload.backgroundImage)) {
-                // Retrieve from shadow storage if not inline
-                payload = await this.persistenceService.getDesign(template.id);
-            }
-
-            if (!payload) {
-                // Last resort: if active design matches, use current canvas
-                if (this.activeTemplateId() === template.id) {
-                    payload = this.canvas.toObject(this.SERIALIZE_PROPS);
-                    (payload as any).width = this.canvas.width;
-                    (payload as any).height = this.canvas.height;
-                } else {
-                    throw new Error('Template payload not found in local or cloud storage.');
-                }
-            }
-
-            const exportData = {
-                ...template,
-                json: payload,
-                isSystem: true, // Mark as system for the destination file
-                isCustom: false,
-                date: new Date().toISOString()
-            };
-
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `${template.name.replace(/\s+/g, '_')}_system_tpl.json`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-
-            this.notificationService.success('Template exported! Add this to system_templates.json');
-        } catch (err) {
-            console.error('Export failed:', err);
-            this.notificationService.error('Export failed: ' + (err as Error).message);
-        }
-    }
 
     private async syncTemplateToCloud(template: Template, json: any) {
         try {
@@ -1748,22 +1706,43 @@ export class BannerService {
     }
 
     async deleteTemplate(templateId: string): Promise<void> {
-        const allSaved = await this.imageStorage.getTemplates();
-        const updated = allSaved.filter(t => t.id !== templateId);
+        this.notificationService.confirm(
+            'Delete Item',
+            'Are you sure you want to delete this item? This action cannot be undone.',
+            async () => {
+                try {
+                    this.deletedItemIds.add(templateId);
 
-        if (await this.saveTemplatesToStorage(updated)) {
-            // Background cleanup of actual design data and cloud
-            try {
-                await Promise.allSettled([
-                    this.persistenceService.deleteDesign(templateId),
-                    this.bannerCloudService.deleteDesignFromCloud(templateId)
-                ]);
-            } catch (err) {
-                console.warn('[Cleanup] Minor failure during background deletion', err);
+                    // Instant UI Update: Manually remove from all library signals
+                    this.savedTemplates.set(this.savedTemplates().filter(t => t.id !== templateId));
+                    this.savedDesigns.set(this.savedDesigns().filter(t => t.id !== templateId));
+                    this.savedBackgrounds.set(this.savedBackgrounds().filter(t => t.id !== templateId));
+
+                    const allSaved = await this.imageStorage.getTemplates();
+                    const updated = allSaved.filter(t => t.id !== templateId);
+
+                    if (await this.saveTemplatesToStorage(updated)) {
+                        // Background cleanup of actual design data and cloud
+                        try {
+                            await Promise.allSettled([
+                                this.persistenceService.deleteDesign(templateId),
+                                this.bannerCloudService.deleteDesignFromCloud(templateId)
+                            ]);
+                        } catch (err) {
+                            console.warn('[Cleanup] Minor failure during background deletion', err);
+                        }
+
+                        // initSavedTemplates will eventually verify everything, 
+                        // but the manual set above makes it instant.
+                        await this.initSavedTemplates();
+                        this.notificationService.success('Item deleted');
+                    }
+                } catch (e) {
+                    console.error('Failed to delete template', e);
+                    this.notificationService.error('Failed to delete item from library');
+                }
             }
-
-            await this.initSavedTemplates();
-        }
+        );
     }
 
     private async saveTemplatesToStorage(templates: Template[]): Promise<boolean> {
@@ -1846,7 +1825,11 @@ export class BannerService {
                     }
 
                     // Then wait for cloud results
-                    const { cloudSystem, cloudUser } = await cloudFetchPromise;
+                    let { cloudSystem, cloudUser } = await cloudFetchPromise;
+
+                    // Filter out already deleted IDs to prevent reconstruction during race conditions
+                    cloudUser = cloudUser.filter(t => !this.deletedItemIds.has(t.id));
+
 
                     // 3. PHASE 3: Intelligent Merge
                     const userMap = new Map<string, Template>();
@@ -1965,77 +1948,7 @@ export class BannerService {
         if (json.backgroundImage) await processObj(json.backgroundImage);
     }
 
-    // ─── EXPORT / IMPORT LIBRARY ───────────────────────────────────────────────
 
-    /**
-     * Exports ALL templates, designs, and backgrounds from IndexedDB into a
-     * self-contained JSON file where every image is embedded as base64.
-     * The user can then commit this file to `src/assets/templates/system_templates.json`
-     * and redeploy → every new visitor will automatically see these items.
-     */
-    public async exportLibraryToJSON(): Promise<void> {
-        if (this.isSaving()) return;
-        this.isSaving.set(true);
-
-        const toastId = this.notificationService.showToast('Preparing library export for Vercel…', 'info', 0);
-        try {
-            const local: any[] = await this.imageStorage.getTemplates();
-            if (!local || local.length === 0) {
-                this.notificationService.removeToast(toastId);
-                this.notificationService.warning('No templates, designs, or backgrounds to export.');
-                this.isSaving.set(false);
-                return;
-            }
-
-            const output: any[] = [];
-
-            for (const tpl of local) {
-                // Fetch the full JSON from the shadow store
-                let json: any = tpl.json;
-                if (!json) {
-                    try {
-                        json = await this.persistenceService.getDesign(tpl.id);
-                    } catch { json = null; }
-                }
-
-                // Embed base64 for all IDB images inside the canvas JSON
-                if (json) {
-                    json = JSON.parse(JSON.stringify(json)); // deep clone
-                    await this.embedIdbImagesToBase64(json);
-                }
-
-                output.push({
-                    id: tpl.id,
-                    name: tpl.name,
-                    category: tpl.category,
-                    thumbnail: tpl.thumbnail ?? '',
-                    isCustom: false,   // will be treated as global when re-imported
-                    date: tpl.date ?? new Date(),
-                    tags: tpl.tags ?? [],
-                    json
-                });
-            }
-
-            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'system_templates.json';
-            a.click();
-            URL.revokeObjectURL(url);
-
-            this.notificationService.removeToast(toastId);
-            this.notificationService.success(
-                `Exported ${output.length} item(s). Move this file to src/assets/templates/system_templates.json and redeploy!`
-            );
-        } catch (e: any) {
-            this.notificationService.removeToast(toastId);
-            console.error('Export failed', e);
-            this.notificationService.error('Export failed: ' + e.message);
-        } finally {
-            this.isSaving.set(false);
-        }
-    }
 
     private async embedIdbImagesToBase64(json: any): Promise<void> {
         if (!json) return;
@@ -2110,6 +2023,7 @@ export class BannerService {
                     localCutouts.forEach(c => cutoutMap.set(c.id, c)); // Local preference
 
                     const merged = Array.from(cutoutMap.values())
+                        .filter(c => !this.deletedItemIds.has(c.id)) // Filter out deleted IDs
                         .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
                     this.cutouts.set(merged);
@@ -2616,19 +2530,33 @@ export class BannerService {
     }
 
     async deleteCutout(id: string): Promise<void> {
-        try {
-            await this.imageStorage.deleteCutout(id);
-            // Cloud Delete
-            try {
-                await this.bannerCloudService.deleteCutoutFromCloud(id);
-            } catch (cloudErr) {
-                console.warn('Cloud cutout deletion failed', cloudErr);
+        this.notificationService.confirm(
+            'Delete Cutout',
+            'Are you sure you want to delete this cutout? This action cannot be undone.',
+            async () => {
+                try {
+                    await this.imageStorage.deleteCutout(id);
+                    this.deletedItemIds.add(id);
+
+                    // Instant UI Update
+                    this.cutouts.set(this.cutouts().filter(c => c.id !== id));
+
+                    try {
+                        await this.bannerCloudService.deleteCutoutFromCloud(id);
+                    } catch (cloudErr) {
+                        console.warn('Cloud cutout deletion failed', cloudErr);
+                    }
+                    await this.initCutouts();
+                    this.notificationService.success('Cutout deleted');
+                } catch (e) {
+                    console.error('Failed to delete cutout', e);
+                    this.notificationService.error('Failed to delete cutout');
+                }
             }
-            await this.initCutouts();
-        } catch (e) {
-            console.error('Failed to delete cutout', e);
-        }
+        );
     }
+
+
 
     async renameCutout(id: string, newName: string): Promise<void> {
         try {
@@ -2640,10 +2568,17 @@ export class BannerService {
     }
 
     async renameCutoutUI(cutout: Cutout): Promise<void> {
-        const newName = prompt('Enter new name for cutout:', cutout.name);
-        if (newName && newName !== cutout.name) {
-            await this.renameCutout(cutout.id, newName);
-        }
+        this.notificationService.prompt(
+            'Rename Cutout',
+            'Enter new name for cutout:',
+            cutout.name,
+            async (newName) => {
+                if (newName && newName !== cutout.name) {
+                    await this.renameCutout(cutout.id, newName);
+                    this.notificationService.success('Cutout renamed');
+                }
+            }
+        );
     }
 
     async loadTemplate(templateJson: any): Promise<void> {
@@ -4192,6 +4127,7 @@ export class BannerService {
                     local.forEach(p => projectMap.set(p.id, p)); // Preference for local
 
                     const merged = Array.from(projectMap.values())
+                        .filter(p => !this.deletedItemIds.has(p.id)) // Filter out deleted IDs
                         .sort((a, b) => (b.date || 0) - (a.date || 0));
 
                     this.savedProjects.set(merged);
@@ -4376,16 +4312,30 @@ export class BannerService {
     }
 
     public async deleteProject(id: string): Promise<void> {
-        const updated = this.savedProjects().filter(p => p.id !== id);
-        this.savedProjects.set(updated);
-        await this.imageStorage.saveProjects(updated);
+        this.notificationService.confirm(
+            'Delete Project',
+            'Are you sure you want to delete this project? This action cannot be undone.',
+            async () => {
+                try {
+                    this.deletedItemIds.add(id);
+                    const updated = this.savedProjects().filter(p => p.id !== id);
+                    this.savedProjects.set(updated);
+                    await this.imageStorage.saveProjects(updated);
 
-        // Cloud Delete
-        try {
-            await this.bannerCloudService.deleteProjectFromCloud(id);
-        } catch (cloudErr) {
-            console.warn('Cloud project deletion failed', cloudErr);
-        }
+
+                    // Cloud Delete
+                    try {
+                        await this.bannerCloudService.deleteProjectFromCloud(id);
+                    } catch (cloudErr) {
+                        console.warn('Cloud project deletion failed', cloudErr);
+                    }
+                    this.notificationService.success('Project deleted');
+                } catch (e) {
+                    console.error('Failed to delete project', e);
+                    this.notificationService.error('Failed to delete project');
+                }
+            }
+        );
     }
 
     // Import External Template

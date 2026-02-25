@@ -52,9 +52,7 @@
                         <button class="card-delete-btn" *ngIf="!t.isSystem" (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
-                        <button class="card-export-btn" (click)="exportItem($event, t)" title="Export JSON">
-                            <span class="material-symbols-outlined">download</span>
-                        </button>
+
                         <div class="system-badge" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-name">{{ t.name }}</div>
@@ -86,9 +84,7 @@
                             (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
-                        <button class="card-export-btn top-left" (click)="exportItem($event, t)" title="Export JSON">
-                            <span class="material-symbols-outlined">download_for_offline</span>
-                        </button>
+
                         <div class="system-badge" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-name-centered">{{ t.name }}</div>
@@ -111,9 +107,7 @@
                         <button class="card-delete-btn" *ngIf="!t.isSystem" (click)="deleteTemplate($event, t)">
                             <span class="material-symbols-outlined">delete</span>
                         </button>
-                        <button class="card-export-btn" (click)="exportItem($event, t)" title="Export for System">
-                            <span class="material-symbols-outlined">ios_share</span>
-                        </button>
+
                         <div class="system-badge large" *ngIf="t.isSystem">System</div>
                     </div>
                     <div class="item-info">

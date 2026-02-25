@@ -154,20 +154,10 @@ export class TemplatesPanel {
             this.notificationService.warning('System templates cannot be deleted.');
             return;
         }
-        this.notificationService.confirm(
-            'Delete Item',
-            `Are you sure you want to delete "${template.name}"? This action cannot be undone.`,
-            async () => {
-                await this.bannerService.deleteTemplate(template.id);
-                this.notificationService.success('Item deleted');
-            }
-        );
+        await this.bannerService.deleteTemplate(template.id);
     }
 
-    exportItem(event: Event, template: Template) {
-        event.stopPropagation();
-        this.bannerService.exportTemplate(template);
-    }
+
 
     hasAnyData = computed(() => {
         return this.filteredTemplates().length > 0 ||
