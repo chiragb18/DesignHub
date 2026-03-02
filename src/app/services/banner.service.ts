@@ -6,6 +6,7 @@ import { PersistenceService } from './persistence.service';
 import { BannerCloudService } from './banner-cloud.service';
 import type { Config } from '@imgly/background-removal';
 import { NotificationService } from './notification.service';
+import { WhatsappService } from './whatsapp.service';
 
 export interface SavedProject {
     id: string;
@@ -13,6 +14,7 @@ export interface SavedProject {
     json: string;
     thumbnail?: string;
     date: number;
+    whatsappMediaId?: string;
 }
 
 export interface Template {
@@ -140,6 +142,8 @@ export class BannerService {
         { id: 'crayon', name: 'Crayon', icon: 'draw', path: 'M20,50 L35,55 L50,45 L65,55 L80,50' },
         { id: 'ribbon', name: 'Silk Ribbon', icon: 'reorder', path: 'M20,45 L80,45 M20,55 L80,55' }
     ];
+
+    private whatsappService = inject(WhatsappService);
 
     constructor() {
         this.debouncedSave = this.debounce(this.saveState.bind(this), 300);
@@ -872,11 +876,13 @@ export class BannerService {
     }
 
     private setupEvents(): void {
-        this.canvas.on('object:added', () => {
-            if (!this.isHistoryLoading) {
-                this.refreshState();
-                this.saveState();
-            }
+        this.canvas.on('object:added', (e: any) => {
+            if (this.isHistoryLoading) return;
+            // SKIP internal UI objects (hover outlines, crop handles, etc)
+            if (e.target && e.target.excludeFromExport) return;
+
+            this.refreshState();
+            this.saveState();
         });
 
         this.canvas.on('path:created', (e: any) => {
@@ -894,11 +900,13 @@ export class BannerService {
             }
         });
 
-        this.canvas.on('object:removed', () => {
-            if (!this.isHistoryLoading) {
-                this.refreshState();
-                this.saveState();
-            }
+        this.canvas.on('object:removed', (e: any) => {
+            if (this.isHistoryLoading) return;
+            // SKIP internal UI objects
+            if (e.target && e.target.excludeFromExport) return;
+
+            this.refreshState();
+            this.saveState();
         });
 
         const updateUI = () => {
@@ -1546,6 +1554,8 @@ export class BannerService {
                 let blob: Blob | null = null;
 
                 try {
+                    // Optimized: Only fetch if it's a remote URL or we definitely don't have it.
+                    // For local blobs, we try to fetch only once per cycle.
                     const corsResponse = await fetch(url);
                     if (!corsResponse.ok) throw new Error('Fetch failed');
                     blob = await corsResponse.blob();
@@ -2886,14 +2896,10 @@ export class BannerService {
         if (!url || typeof url !== 'string' || url === 'undefined') return '';
 
         if (url.startsWith('blob:')) {
-            try {
-                // If this fetch fails, the blob is revoked/dead.
-                const res = await fetch(url);
-                if (res.ok) return url;
-            } catch (e) {
-                // Fallthrough to empty string -> triggers IDB lookup below
-            }
-            return '';
+            // OPTIMIZATION: Do not fetch every blob URL to check if it's dead.
+            // This causes massive network noise during restoration.
+            // Just return it; Fabric will handle invalid URLs naturally.
+            return url;
         }
 
         if (!url.startsWith('indexeddb://')) return url;
@@ -4157,17 +4163,21 @@ export class BannerService {
             const json = JSON.parse(JSON.stringify(rawJson));
             this.forceStableRefs(json);
 
-            (json as any).width = this.canvas.width;
-            (json as any).height = this.canvas.height;
-
             // 3. Offload Images to Storage
             await this.processImagesForStorage(json);
 
-            // 4. Generate Thumbnail
+            // 4. Generate Thumbnail and WhatsApp Data URL
             const thumbnail = this.canvas.toDataURL({
                 format: 'jpeg',
                 multiplier: 0.15,
                 quality: 0.6
+            });
+
+            const whatsappDataUrl = this.canvas.toDataURL({
+                format: 'jpeg',
+                multiplier: 2.0,
+                quality: 0.9,
+                enableRetinaScaling: true
             });
 
             // 5. Build Metadata
@@ -4207,14 +4217,13 @@ export class BannerService {
             // B. Save Metadata List
             await this.imageStorage.saveProjects(updatedList);
 
-            // 7. UI Update
+            // 7. UI Update (Instant response)
             this.savedProjects.set(updatedList);
             this.activeProjectId.set(targetId);
-
-            // 8. CLOUD SYNC (BACKGROUND)
-            this.syncProjectToCloud(updatedList.find(p => p.id === targetId)!, json);
-
             this.notificationService.success('Project saved locally!');
+
+            // 8. BACKGROUND ASYNC TASKS (Non-blocking)
+            this.runBackgroundUploads(targetId, updatedList, json, whatsappDataUrl);
 
         } catch (e) {
             console.error('❌ Final Project Save Failure', e);
@@ -4224,13 +4233,48 @@ export class BannerService {
         }
     }
 
+    private async runBackgroundUploads(targetId: string, list: SavedProject[], json: any, whatsappDataUrl: string) {
+        const project = list.find(p => p.id === targetId);
+        if (!project) return;
+
+        console.log('[Background] Starting parallel sync tasks...');
+
+        // 1. WhatsApp Sync (High Priority)
+        const whatsappTask = (async () => {
+            try {
+                if (!whatsappDataUrl) return;
+                const blob = this.dataURLtoBlob(whatsappDataUrl);
+                const mediaId = await this.whatsappService.uploadMedia(blob);
+
+                // Save Media ID to local metadata instantly
+                project.whatsappMediaId = mediaId;
+                await this.imageStorage.saveProjects(list);
+                this.savedProjects.set([...list]);
+
+                this.notificationService.success(`WhatsApp Sync: ${mediaId}`);
+                console.log('[Background] ✅ WhatsApp Upload Success:', mediaId);
+            } catch (e) {
+                console.warn('[Background] ⚠️ WhatsApp Sync failed', e);
+            }
+        })();
+
+        // 2. Cloud Sync (Firebase - Optional)
+        const cloudTask = (async () => {
+            try {
+                await this.bannerCloudService.saveProjectToCloud(project, json);
+                console.log('[Background] ✅ Firebase Cloud Sync Success');
+            } catch (e) {
+                console.warn('[Background] ⚠️ Firebase Sync failed (CORS/Config issue)', e);
+            }
+        })();
+
+        // Fire both and don't wait for completion (Non-blocking)
+        // Promise.allSettled is safer than all() as it keeps going regardless of individual failures
+        Promise.allSettled([whatsappTask, cloudTask]);
+    }
+
     private async syncProjectToCloud(project: any, json: any) {
-        try {
-            await this.bannerCloudService.saveProjectToCloud(project, json);
-            console.log('[Cloud] ✅ Project synced successfully');
-        } catch (e) {
-            console.warn('[Cloud] ⚠️ Project sync failed (offline or config error)', e);
-        }
+        // Redundant but kept for interface stability if called elsewhere
     }
 
 

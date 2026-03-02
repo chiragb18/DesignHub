@@ -15,6 +15,7 @@ export class BannerCloudService {
     // --- Cloud Saving Logic ---
 
     async saveTemplateToCloud(template: Template, canvasJson: any): Promise<void> {
+        if (!this.firebase.isFirebaseConfigured()) return;
         const designId = template.id;
         const basePath = `designs/${designId}`;
 
@@ -144,6 +145,12 @@ export class BannerCloudService {
     }
 
     async saveProjectToCloud(project: any, canvasJson: any): Promise<void> {
+        // 1. Check if Firebase is actually configured with real keys
+        if (!this.firebase.isFirebaseConfigured()) {
+            console.log('[CloudSync] Skipped (Firebase is using placeholder config)');
+            return;
+        }
+
         const designId = project.id;
         const basePath = `projects/${designId}`;
         let thumbnailUrl = project.thumbnail;
@@ -198,6 +205,7 @@ export class BannerCloudService {
     }
 
     async uploadCutoutToCloud(cutout: any): Promise<string> {
+        if (!this.firebase.isFirebaseConfigured()) return '';
         const basePath = `cutouts/${cutout.id}`;
         const blobUrl = await this.firebase.uploadFile(`${basePath}/original.png`, cutout.blob);
         let thumbnailUrl = cutout.thumbnail;

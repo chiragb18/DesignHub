@@ -10,6 +10,12 @@ export class FirebaseService {
     private firestore = inject(Firestore);
     private storage = inject(Storage);
 
+    public isFirebaseConfigured(): boolean {
+        // Simple check to see if placeholders are still present from environment
+        const projectId = (this.firestore as any).databaseId?.projectId;
+        return !!projectId && projectId !== 'YOUR_PROJECT_ID' && projectId !== 'your_project_id';
+    }
+
     // --- Storage Operations ---
 
     async uploadFile(path: string, blob: Blob): Promise<string> {
@@ -27,7 +33,6 @@ export class FirebaseService {
 
     async saveDocument(collectionName: string, docId: string, data: any): Promise<void> {
         const docRef = doc(this.firestore, collectionName, docId);
-        // Merge true to avoid overwriting fields not present in data (though setDoc usually overwrites unless merge is true)
         return await setDoc(docRef, data, { merge: true });
     }
 
