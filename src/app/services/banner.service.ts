@@ -2132,16 +2132,16 @@ export class BannerService {
                     this.bgRemovalProgress.set(percent);
 
                     if (key.includes('fetch')) {
-                        this.bgRemovalStatus.set(`Downloading Model... ${percent}%`);
+                        this.bgRemovalStatus.set(`AI Loading... ${percent}%`);
                     } else if (key.includes('compute')) {
-                        this.bgRemovalStatus.set(`Refining... ${percent}%`);
+                        this.bgRemovalStatus.set(`Processing... ${percent}%`);
                     }
                 },
-                model: 'isnet_fp16',
+                model: 'isnet_quint8', // Faster quantized model
                 publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
-                proxyToWorker: false
+                proxyToWorker: true // Offload to web worker for better canvas performance
             };
-
+            const startTime = Date.now();
             const resultBlob = await rbFunction(inputSource, config);
             resultUrl = URL.createObjectURL(resultBlob);
 
@@ -2202,6 +2202,12 @@ export class BannerService {
             (newImg as any).idbId = cutoutId;
 
             this.notificationService.success('Background Removed!');
+
+            // ENFORCE 2 SECOND DURATION (Screen Freeze)
+            const elapsed = Date.now() - startTime;
+            if (elapsed < 2000) {
+                await new Promise(resolve => setTimeout(resolve, 2000 - elapsed));
+            }
 
         } catch (error: any) {
             console.error('Background Removal Error:', error);
@@ -3199,86 +3205,165 @@ export class BannerService {
 
 
 
-    applyImageMask(type: 'none' | 'cloud' | 'wave' | 'organic', maskHeight: number = 20, flip: boolean = false): void {
+    applyImageMask(type: 'none' | 'cloud' | 'wave' | 'organic' | 'soft' | 'bottom-blur', maskHeight: number = 20, flip: boolean = false): void {
         const obj = this.canvas.getActiveObject();
         if (!obj || obj.type !== 'image') return;
 
         const img = obj as fabric.Image;
+        // Use intrinsic dimensions for the mask to align with image coordinate space
         const w = img.width || 0;
         const h = img.height || 0;
 
-        // Save state properties
+        // Save state properties for side-bar sync
         (img as any).maskType = type;
         (img as any).maskHeight = maskHeight;
         (img as any).maskFlip = flip;
 
         if (type === 'none') {
-            img.clipPath = undefined;
-            this.canvas.renderAll();
+            img.set({
+                clipPath: null,
+                shadow: null,
+                dirty: true
+            });
+            this.canvas.requestRenderAll();
+            this.triggerSelectedUpdate();
             this.saveState();
             return;
         }
 
-        // Calculate height of the effect part
-        const effectH = (maskHeight / 100) * h;
-        const solidH = h - effectH;
+        const impact = maskHeight / 100;
+        let clipObject: fabric.Object;
 
-        let d = '';
+        if (type === 'soft' || type === 'bottom-blur') {
+            // "Soft Blur" or "Bottom Blur" - Enhanced Linear Gradient
+            const d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${h / 2} L ${-w / 2} ${h / 2} Z`;
 
-        if (type === 'cloud') {
-            // Cloud: Fluffy bumps at bottom
-            d = `M 0 0 L ${w} 0 L ${w} ${solidH}`;
-            const bumps = 6;
-            const step = w / bumps;
-            for (let i = 0; i < bumps; i++) {
-                const currentX = w - (i * step);
-                const nextX = w - ((i + 1) * step);
-                const cx = currentX - (step / 2);
-                const cy = solidH + effectH;
-                d += ` Q ${cx} ${cy} ${nextX} ${solidH}`;
+            let stops;
+            const isBottomBlur = type === 'bottom-blur';
+
+            // For Bottom Blur, we want an even smoother transition than standard soft
+            if (flip) {
+                // Fade at Top
+                stops = isBottomBlur ? [
+                    { offset: 0, color: 'rgba(255,255,255,0)' },
+                    { offset: impact * 0.4, color: 'rgba(255,255,255,0.2)' },
+                    { offset: impact * 0.7, color: 'rgba(255,255,255,0.7)' },
+                    { offset: Math.min(0.95, impact), color: 'rgba(255,255,255,1)' },
+                    { offset: 1, color: 'rgba(255,255,255,1)' }
+                ] : [
+                    { offset: 0, color: 'rgba(255,255,255,0)' },
+                    { offset: Math.min(0.9, impact), color: 'rgba(255,255,255,1)' },
+                    { offset: 1, color: 'rgba(255,255,255,1)' }
+                ];
+            } else {
+                // Fade at Bottom
+                stops = isBottomBlur ? [
+                    { offset: 0, color: 'rgba(255,255,255,1)' },
+                    { offset: Math.max(0.05, 1 - impact), color: 'rgba(255,255,255,1)' },
+                    { offset: 1 - impact * 0.7, color: 'rgba(255,255,255,0.7)' },
+                    { offset: 1 - impact * 0.4, color: 'rgba(255,255,255,0.2)' },
+                    { offset: 1, color: 'rgba(255,255,255,0)' }
+                ] : [
+                    { offset: 0, color: 'rgba(255,255,255,1)' },
+                    { offset: Math.max(0.1, 1 - impact), color: 'rgba(255,255,255,1)' },
+                    { offset: 1, color: 'rgba(255,255,255,0)' }
+                ];
             }
-            d += ` L 0 0 Z`;
-        }
-        else if (type === 'wave') {
-            // Wave: Sine-like wave
-            d = `M 0 0 L ${w} 0 L ${w} ${solidH}`;
-            const waves = 4;
-            const step = w / waves;
-            for (let i = 0; i < waves; i++) {
-                const currentX = w - (i * step);
-                const nextX = w - ((i + 1) * step);
-                const midX = currentX - (step / 2);
-                const q1cx = currentX - (step / 4);
-                const q1cy = solidH + effectH;
-                const q2cx = currentX - (3 * step / 4);
-                const q2cy = solidH - (effectH * 0.2);
-                d += ` Q ${q1cx} ${q1cy} ${midX} ${solidH + effectH * 0.4}`;
-                d += ` Q ${q2cx} ${q2cy} ${nextX} ${solidH}`;
+
+            clipObject = new fabric.Path(d, {
+                originX: 'center',
+                originY: 'center',
+                left: 0,
+                top: 0,
+                absolutePositioned: false,
+                fill: new fabric.Gradient({
+                    type: 'linear',
+                    coords: { x1: 0, y1: -h / 2, x2: 0, y2: h / 2 },
+                    colorStops: stops
+                })
+            });
+
+            // Enhanced shadow for "Bottom Blur" to give it that "glowy/fuzzy" depth
+            img.set({
+                shadow: new fabric.Shadow({
+                    color: isBottomBlur ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.8)',
+                    blur: isBottomBlur ? 50 : 30, // Larger blur for bottom-blur
+                    offsetX: 0,
+                    offsetY: flip ? -25 : 25
+                })
+            });
+        } else {
+            // Reset shadow for geometric masks
+            img.set({ shadow: null });
+
+            // Path-based clipping (Cloud, Wave, Organic) - also using centered coordinates
+            let d = '';
+            const solidH = h * (1 - impact);
+            const effectH = h * impact;
+
+            if (type === 'cloud') {
+                d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${-h / 2 + solidH}`;
+                const bumps = 6;
+                const step = w / bumps;
+                for (let i = 0; i < bumps; i++) {
+                    const currentX = w / 2 - (i * step);
+                    const nextX = w / 2 - ((i + 1) * step);
+                    const cx = currentX - (step / 2);
+                    const cy = -h / 2 + solidH + effectH;
+                    d += ` Q ${cx} ${cy} ${nextX} ${-h / 2 + solidH}`;
+                }
+                d += ` Z`;
+            } else if (type === 'wave') {
+                d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${-h / 2 + solidH}`;
+                const waves = 4;
+                const step = w / waves;
+                for (let i = 0; i < waves; i++) {
+                    const currentX = w / 2 - (i * step);
+                    const nextX = w / 2 - ((i + 1) * step);
+                    const midX = currentX - (step / 2);
+                    const q1cx = currentX - (step / 4);
+                    const q1cy = -h / 2 + solidH + effectH;
+                    const q2cx = currentX - (3 * step / 4);
+                    const q2cy = -h / 2 + solidH - (effectH * 0.2);
+                    d += ` Q ${q1cx} ${q1cy} ${midX} ${-h / 2 + solidH + effectH * 0.4}`;
+                    d += ` Q ${q2cx} ${q2cy} ${nextX} ${-h / 2 + solidH}`;
+                }
+                d += ` Z`;
+            } else { // organic
+                d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${-h / 2 + solidH}`;
+                d += ` Q ${w * 0.2} ${h / 2} ${0} ${-h / 2 + solidH + effectH * 0.5}`;
+                d += ` Q ${-w * 0.3} ${-h / 2 + solidH - effectH * 0.5} ${-w / 2} ${-h / 2 + solidH}`;
+                d += ` Z`;
             }
-            d += ` L 0 0 Z`;
-        }
-        else if (type === 'organic') {
-            // Organic/Blob: Smooth irregular curve
-            d = `M 0 0 L ${w} 0 L ${w} ${solidH}`;
-            d += ` Q ${w * 0.7} ${h} ${w * 0.5} ${solidH + effectH * 0.5}`;
-            d += ` Q ${w * 0.2} ${solidH - effectH * 0.5} 0 ${solidH}`;
-            d += ` L 0 0 Z`;
-        }
 
-        const path = new fabric.Path(d);
-        path.originX = 'center';
-        path.originY = 'center';
-        path.left = 0;
-        path.top = 0;
-
-        if (flip) {
-            path.flipY = true;
+            clipObject = new fabric.Path(d, {
+                originX: 'center',
+                originY: 'center',
+                left: 0,
+                top: 0,
+                absolutePositioned: false,
+                flipY: flip
+            });
         }
 
-        img.clipPath = path;
+        img.set({
+            clipPath: clipObject,
+            dirty: true
+        });
+        img.setCoords();
+
         this.canvas.renderAll();
+        this.canvas.requestRenderAll();
+        // Catch-up for async v7 rendering
+        setTimeout(() => this.canvas?.requestRenderAll(), 50);
+
+        this.triggerSelectedUpdate();
         this.saveState();
     }
+
+
+
+
 
     applyBackgroundBlur(value: number) {
         const bg = this.canvas.backgroundImage;

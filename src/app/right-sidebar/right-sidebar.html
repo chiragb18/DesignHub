@@ -613,7 +613,23 @@
                             </div>
                             <span>Organic</span>
                         </div>
+                        <div class="filter-card" [class.active]="maskType === 'soft'" (click)="applyMask('soft')">
+                            <div class="preview" style="display:flex; justify-content:center; align-items:center;">
+                                <span class="material-symbols-outlined"
+                                    style="color:white; font-size:24px;">blur_linear</span>
+                            </div>
+                            <span>Soft Blur</span>
+                        </div>
+                        <div class="filter-card" [class.active]="maskType === 'bottom-blur'"
+                            (click)="applyMask('bottom-blur')">
+                            <div class="preview" style="display:flex; justify-content:center; align-items:center;">
+                                <span class="material-symbols-outlined"
+                                    style="color:white; font-size:24px;">blur_on</span>
+                            </div>
+                            <span>Bottom Blur</span>
+                        </div>
                     </div>
+
 
                     <div class="adjustment-sliders" *ngIf="maskType !== 'none'">
                         <div class="slider-group">

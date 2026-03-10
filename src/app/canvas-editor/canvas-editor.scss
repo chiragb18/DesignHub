@@ -61,11 +61,73 @@
         background: white;
         flex-shrink: 0;
         border-radius: 3px;
+        position: relative; // Ensure loader is relative to board
 
         canvas {
             display: block;
             touch-action: none;
             /* Prevent browser gestures on canvas */
+        }
+
+        /* ─── Canvas AI Loader (Refined) ─── */
+        .canvas-ai-loader {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.4); // Light tint
+            backdrop-filter: blur(8px) saturate(1.2); // Colorful blur
+            -webkit-backdrop-filter: blur(8px) saturate(1.2);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            animation: fadeIn 0.3s ease-out;
+            cursor: wait;
+            border-radius: inherit;
+
+            .loader-wheel {
+                width: 56px;
+                height: 56px;
+                border: 4px solid #f1f5f9;
+                border-top-color: #8b5cf6; // Purple
+                border-right-color: #ec4899; // Pink
+                border-radius: 50%;
+                animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+                box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+            }
+
+            .progress-wrap {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 12px;
+                width: 220px;
+
+                .lbl {
+                    color: #1e293b;
+                    font-size: 14px;
+                    font-weight: 700;
+                    letter-spacing: 0.02em;
+                    text-align: center;
+                }
+
+                .mini-bar {
+                    width: 100%;
+                    height: 6px;
+                    background: rgba(0, 0, 0, 0.05);
+                    border-radius: 10px;
+                    overflow: hidden;
+                    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+
+                    .fill {
+                        height: 100%;
+                        background: linear-gradient(90deg, #8b5cf6, #ec4899);
+                        transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+                        box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+                    }
+                }
+            }
         }
     }
 
@@ -220,5 +282,27 @@
     to {
         opacity: 1;
         transform: translate(-50%, 0);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
     }
 }

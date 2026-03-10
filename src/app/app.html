@@ -87,6 +87,10 @@
 </div>
 <app-notification-container></app-notification-container>
 
+<!-- SCREEN FREEZER (Transparent interaction blocker) -->
+<div class="screen-freezer" *ngIf="bannerService.isRemovingBg()"></div>
+
+
 <!-- GLOBAL LOADING OVERLAY -->
 <div class="global-loading-overlay" *ngIf="bannerService.isSaving() || bannerService.isProjectLoading()">
     <div class="loader-spinner"></div>

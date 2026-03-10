@@ -3,7 +3,19 @@
         <!-- Canvas Board with Artboard Shadow -->
         <div class="canvas-board">
             <canvas id="editorCanvas"></canvas>
+
+            <!-- CANVAS-ONLY AI LOADER (Discrete) -->
+            <div class="canvas-ai-loader" *ngIf="bannerService.isRemovingBg()">
+                <div class="loader-wheel"></div>
+                <div class="progress-wrap">
+                    <span class="lbl">{{ bannerService.bgRemovalStatus() }}</span>
+                    <div class="mini-bar">
+                        <div class="fill" [style.width.%]="bannerService.bgRemovalProgress()"></div>
+                    </div>
+                </div>
+            </div>
         </div>
+
     </div>
 
     <!-- Floating Bottom Action Bar -->
