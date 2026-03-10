@@ -38,6 +38,116 @@ export interface Cutout {
     timestamp: number;
 }
 
+/**
+ * Real Gradient Blur Filter for Fabric.js
+ * Blurs the image gradually from one side to another.
+ */
+export class GradientBlurFilter extends fabric.filters.BaseFilter<string, any, any> {
+    public static override type = 'GradientBlur';
+    public blur: number = 25;
+    public impact: number = 0.5;
+    public flip: boolean = false;
+
+    constructor(options?: any) {
+        super(options);
+        if (options) {
+            this.blur = options.blur !== undefined ? options.blur : 25;
+            this.impact = options.impact !== undefined ? options.impact : 0.5;
+            this.flip = !!options.flip;
+        }
+    }
+
+    public override getFragmentSource() {
+        return `
+            precision highp float;
+            uniform sampler2D uTexture;
+            varying vec2 vTexCoord;
+            uniform float uBlur;
+            uniform float uImpact;
+            uniform float uFlip;
+
+            void main() {
+                // Determine vertical orientation
+                // Default (uFlip=0) should be Bottom Blur. 
+                // Based on user feedback, vTexCoord.y=0 is top, so we invert it for the default case.
+                float y = vTexCoord.y;
+                if (uFlip < 0.5) {
+                    y = 1.0 - y;
+                }
+
+                // Accuracy calculation: Stay sharp for most of image, then aggressively blur/fade
+                // This creates the "merging" effect the user described
+                float intensity = smoothstep(uImpact, 0.0, y);
+
+                if (intensity <= 0.0) {
+                    gl_FragColor = texture2D(uTexture, vTexCoord);
+                    return;
+                }
+
+                // Professional Depth Blur (25-tap Poisson Disk)
+                float r = intensity * uBlur * 0.005; 
+                vec4 color = texture2D(uTexture, vTexCoord);
+                
+                // High-quality sampling
+                color += texture2D(uTexture, vTexCoord + vec2( 0.0,  1.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.0, -1.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 1.0,  0.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-1.0,  0.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.5,  0.8) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.5,  0.8) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.5, -0.8) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.5, -0.8) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.8,  0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.8, -0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.8,  0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.8, -0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.3,  0.3) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.3,  0.3) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.3, -0.3) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.3, -0.3) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.0,  0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.0, -0.5) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.5,  0.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.5,  0.0) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.2,  0.9) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.2,  0.9) * r);
+                color += texture2D(uTexture, vTexCoord + vec2( 0.2, -0.9) * r);
+                color += texture2D(uTexture, vTexCoord + vec2(-0.2, -0.9) * r);
+
+                vec4 blurred = color / 25.0;
+                
+                // THE "ACCURATE MERGE" LOGIC
+                // 1. Blend towards Pure White (for color accuracy in banners)
+                // 2. Fade Alpha (to actually "disappear" and merge)
+                vec4 white = vec4(1.0, 1.0, 1.0, blurred.a);
+                vec4 mergedColor = mix(blurred, white, intensity);
+                
+                // Apply a quadratic decay to transparency for a softer disappearing feel
+                mergedColor.a *= (1.0 - (intensity * intensity));
+                
+                gl_FragColor = mergedColor;
+            }
+        `;
+    }
+
+    public override getUniformLocations(gl: any, program: any) {
+        return {
+            uBlur: gl.getUniformLocation(program, 'uBlur'),
+            uImpact: gl.getUniformLocation(program, 'uImpact'),
+            uFlip: gl.getUniformLocation(program, 'uFlip')
+        };
+    }
+
+    public override sendUniformData(gl: any, uniformLocations: any) {
+        gl.uniform1f(uniformLocations.uBlur, this.blur);
+        gl.uniform1f(uniformLocations.uImpact, this.impact);
+        gl.uniform1f(uniformLocations.uFlip, this.flip ? 1.0 : 0.0);
+    }
+}
+
+// No global registration to avoid "object not extensible" errors in Fabric 7
+// Usage will be direct via class instantiation
+
 @Injectable({
     providedIn: 'root'
 })
@@ -3205,7 +3315,7 @@ export class BannerService {
 
 
 
-    applyImageMask(type: 'none' | 'cloud' | 'wave' | 'organic' | 'soft' | 'bottom-blur', maskHeight: number = 20, flip: boolean = false): void {
+    applyImageMask(type: 'none' | 'cloud' | 'wave' | 'bottom-blur', maskHeight: number = 20, flip: boolean = false): void {
         const obj = this.canvas.getActiveObject();
         if (!obj || obj.type !== 'image') return;
 
@@ -3220,6 +3330,12 @@ export class BannerService {
         (img as any).maskFlip = flip;
 
         if (type === 'none') {
+            const hasGb = img.filters?.some(f => (f as any).type === 'GradientBlur');
+            if (hasGb) {
+                this.executeFilterOperation(img, () => {
+                    img.filters = (img.filters || []).filter(f => (f as any).type !== 'GradientBlur');
+                });
+            }
             img.set({
                 clipPath: null,
                 shadow: null,
@@ -3234,65 +3350,38 @@ export class BannerService {
         const impact = maskHeight / 100;
         let clipObject: fabric.Object;
 
-        if (type === 'soft' || type === 'bottom-blur') {
-            // "Soft Blur" or "Bottom Blur" - Enhanced Linear Gradient
-            const d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${h / 2} L ${-w / 2} ${h / 2} Z`;
+        if (type === 'bottom-blur') {
+            // "Bottom Blur" - Now handled ALMOST ENTIRELY by the shader for true "merging" accuracy
+            // We set clipPath to null to avoid hard edges or "cut-off" blur spread
+            clipObject = null as any;
 
-            let stops;
-            const isBottomBlur = type === 'bottom-blur';
-
-            // For Bottom Blur, we want an even smoother transition than standard soft
-            if (flip) {
-                // Fade at Top
-                stops = isBottomBlur ? [
-                    { offset: 0, color: 'rgba(255,255,255,0)' },
-                    { offset: impact * 0.4, color: 'rgba(255,255,255,0.2)' },
-                    { offset: impact * 0.7, color: 'rgba(255,255,255,0.7)' },
-                    { offset: Math.min(0.95, impact), color: 'rgba(255,255,255,1)' },
-                    { offset: 1, color: 'rgba(255,255,255,1)' }
-                ] : [
-                    { offset: 0, color: 'rgba(255,255,255,0)' },
-                    { offset: Math.min(0.9, impact), color: 'rgba(255,255,255,1)' },
-                    { offset: 1, color: 'rgba(255,255,255,1)' }
-                ];
-            } else {
-                // Fade at Bottom
-                stops = isBottomBlur ? [
-                    { offset: 0, color: 'rgba(255,255,255,1)' },
-                    { offset: Math.max(0.05, 1 - impact), color: 'rgba(255,255,255,1)' },
-                    { offset: 1 - impact * 0.7, color: 'rgba(255,255,255,0.7)' },
-                    { offset: 1 - impact * 0.4, color: 'rgba(255,255,255,0.2)' },
-                    { offset: 1, color: 'rgba(255,255,255,0)' }
-                ] : [
-                    { offset: 0, color: 'rgba(255,255,255,1)' },
-                    { offset: Math.max(0.1, 1 - impact), color: 'rgba(255,255,255,1)' },
-                    { offset: 1, color: 'rgba(255,255,255,0)' }
-                ];
-            }
-
-            clipObject = new fabric.Path(d, {
-                originX: 'center',
-                originY: 'center',
-                left: 0,
-                top: 0,
-                absolutePositioned: false,
-                fill: new fabric.Gradient({
-                    type: 'linear',
-                    coords: { x1: 0, y1: -h / 2, x2: 0, y2: h / 2 },
-                    colorStops: stops
-                })
+            // HANDLE REAL BLUR FILTER for Bottom Blur
+            this.executeFilterOperation(img, () => {
+                let gb = img.filters?.find(f => (f as any).type === 'GradientBlur') as any;
+                if (!gb) {
+                    gb = new GradientBlurFilter({
+                        blur: 80, // Even deeper professional blur
+                        impact: impact,
+                        flip: flip
+                    });
+                    img.filters = (img.filters || []);
+                    img.filters.push(gb);
+                } else {
+                    gb.impact = impact;
+                    gb.flip = flip;
+                    gb.blur = 80;
+                }
             });
 
-            // Enhanced shadow for "Bottom Blur" to give it that "glowy/fuzzy" depth
-            img.set({
-                shadow: new fabric.Shadow({
-                    color: isBottomBlur ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.8)',
-                    blur: isBottomBlur ? 50 : 30, // Larger blur for bottom-blur
-                    offsetX: 0,
-                    offsetY: flip ? -25 : 25
-                })
-            });
+            // Remove any shadows/spread to satisfy "not spread it at that position"
+            img.set({ shadow: null });
         } else {
+            // Remove GradientBlur if switching to other mask
+            if (img.filters?.some(f => (f as any).type === 'GradientBlur')) {
+                this.executeFilterOperation(img, () => {
+                    img.filters = (img.filters || []).filter(f => (f as any).type !== 'GradientBlur');
+                });
+            }
             // Reset shadow for geometric masks
             img.set({ shadow: null });
 
@@ -3313,7 +3402,7 @@ export class BannerService {
                     d += ` Q ${cx} ${cy} ${nextX} ${-h / 2 + solidH}`;
                 }
                 d += ` Z`;
-            } else if (type === 'wave') {
+            } else { // wave
                 d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${-h / 2 + solidH}`;
                 const waves = 4;
                 const step = w / waves;
@@ -3328,11 +3417,6 @@ export class BannerService {
                     d += ` Q ${q1cx} ${q1cy} ${midX} ${-h / 2 + solidH + effectH * 0.4}`;
                     d += ` Q ${q2cx} ${q2cy} ${nextX} ${-h / 2 + solidH}`;
                 }
-                d += ` Z`;
-            } else { // organic
-                d = `M ${-w / 2} ${-h / 2} L ${w / 2} ${-h / 2} L ${w / 2} ${-h / 2 + solidH}`;
-                d += ` Q ${w * 0.2} ${h / 2} ${0} ${-h / 2 + solidH + effectH * 0.5}`;
-                d += ` Q ${-w * 0.3} ${-h / 2 + solidH - effectH * 0.5} ${-w / 2} ${-h / 2 + solidH}`;
                 d += ` Z`;
             }
 
